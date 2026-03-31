@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+
+  spark:
+    image: apache/spark:4.0.2-scala2.13-java17-python3-r-ubuntu
+    container_name: spark
+    command: >
+      /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    ports:
+      - "7077:7077"
+      - "8081:8080"
+    volumes:
+      - ./spark-apps:/opt/spark-apps
+  
+  dagster-webserver:
+    build:
+      context: ./dagster
+    container_name: dagster-webserver
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./dagster:/opt/dagster/app 
+    depends_on:
+      - spark
+
+  minio:
+    image: quay.io/minio/minio
+    container_name: minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+
+  nessie:
+    image: ghcr.io/projectnessie/nessie
+    container_name: nessie
+    ports:
+      - "19120:19120"
+
+  trino:
+    image: trinodb/trino
+    container_name: trino
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./trino/catalog:/etc/trino/catalog
+    depends_on:
+      - minio
+      - nessie
+
+  superset:
+    image: apache/superset:3.1.1
+    container_name: superset
+    ports:
+      - "8088:8088"
+    environment:
+      - SUPERSET_SECRET_KEY=supersecretkey
+    volumes:
+      - superset_home:/app/superset_home
+    command: >
+      /bin/sh -c "
+      pip install trino==0.336.0 &&
+      pip install sqlalchemy-trino==0.5.0 &&
+      superset db upgrade &&
+      superset fab create-admin \
+          --username saf \
+          --firstname Superset \
+          --lastname Admin \
+          --email safi@superset.com \
+          --password safi &&
+      superset init &&
+      superset run -h 0.0.0.0 -p 8088
+      "
+    depends_on:
+      - trino
+      
+volumes:
+  superset_home:
+  minio_data: {}
