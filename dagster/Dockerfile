@@ -15,7 +15,9 @@ COPY . /opt/dagster/app
 
 RUN pip install --upgrade pip
 RUN pip install dagster dagit pyspark==3.5.2
+RUN pip install pandas
+RUN pip install "dlt[filesystem]"
 
 EXPOSE 3000
 
-CMD ["dagster-webserver", "-h", "0.0.0.0", "-p", "3000", "-w", "workspace.yaml"]
+CMD ["sh", "-c", "dagster-daemon run & dagit -h 0.0.0.0 -p 3000 -w workspace.yaml"]
