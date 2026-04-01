@@ -5,24 +5,44 @@ services:
   spark:
     image: apache/spark:4.0.2-scala2.13-java17-python3-r-ubuntu
     container_name: spark
+    user: root
+    environment:
+      - SPARK_MODE=master
     command: >
-      /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+      /bin/bash -c "pip install dagster-pipes && /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master"
     ports:
       - "7077:7077"
       - "8081:8080"
     volumes:
       - ./spark-apps:/opt/spark-apps
   
-  dagster-webserver:
+  webserver:
     build:
       context: ./dagster
+      dockerfile: Dockerfile
     container_name: dagster-webserver
+    environment:
+      DAGSTER_HOME: /opt/dagster/
+    volumes:
+      - ./dagster:/opt/dagster/ 
+      - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "3000:3000"
-    volumes:
-      - ./dagster:/opt/dagster/app 
     depends_on:
-      - spark
+      - daemon
+    command: dagit -h 0.0.0.0 -p 3000 -w workspace.yaml
+
+  daemon:
+    build:
+      context: ./dagster
+      dockerfile: Dockerfile
+    container_name: dagster-daemon
+    environment:
+      DAGSTER_HOME: /opt/dagster/
+    volumes:
+      - ./dagster:/opt/dagster/
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: dagster-daemon run
 
   minio:
     image: quay.io/minio/minio

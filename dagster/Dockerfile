@@ -1,23 +1,21 @@
 FROM python:3.11-slim
 
-RUN apt-get update && apt-get install -y \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-ENV DAGSTER_HOME=/opt/dagster/dagster_home
-ENV PYTHONUNBUFFERED=1
-
-RUN mkdir -p /opt/dagster/app /opt/dagster/dagster_home
-
-WORKDIR /opt/dagster/app
-
-COPY . /opt/dagster/app
-
 RUN pip install --upgrade pip
-RUN pip install dagster dagit pyspark==3.5.2
-RUN pip install pandas
-RUN pip install "dlt[filesystem]"
+RUN pip install \
+    dagster \
+    dagster-graphql \
+    dagster-webserver \
+    dagster-postgres \
+    dagster-docker \
+    dagit \
+    pandas \
+    "dlt[filesystem]" \
+    "dlt[parquet]" \
+    pyspark
 
-EXPOSE 3000
 
-CMD ["sh", "-c", "dagster-daemon run & dagit -h 0.0.0.0 -p 3000 -w workspace.yaml"]
+ENV DAGSTER_HOME=/opt/dagster/
+
+RUN mkdir -p $DAGSTER_HOME
+
+WORKDIR $DAGSTER_HOME

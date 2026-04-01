@@ -1,2 +1,10 @@
 *.csv
 *.pyc
+
+.logs_queue/
+.telemetry/
+.nux/
+logs/
+history/
+storage/
+schedules/
