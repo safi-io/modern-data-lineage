@@ -84,6 +84,12 @@ services:
     container_name: nessie
     ports:
       - "19120:19120"
+    volumes:
+      - nessie_data:/data
+    environment:
+      - QUARKUS_DATASOURCE_JDBC_URL=
+      - nessie.version.store.type=ROCKSDB
+      - nessie.version.store.persist.rocks.db-path=/data/rocksdb
 
   trino:
     image: trinodb/trino
@@ -125,3 +131,4 @@ services:
 volumes:
   superset_home:
   minio_data: {}
+  nessie_data: {}
