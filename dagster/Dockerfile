@@ -13,6 +13,7 @@ RUN pip install \
     "dlt[parquet]" \
     pyspark
 
+RUN apt-get update && apt-get install -y docker.io
 
 ENV DAGSTER_HOME=/opt/dagster/
 
