@@ -61,6 +61,8 @@ services:
       DAGSTER_HOME: /opt/dagster/
     volumes:
       - ./dagster:/opt/dagster/
+      # For Raw Data Files
+      - ./data:/opt/dagster/data/
       - /var/run/docker.sock:/var/run/docker.sock
     command: dagster-daemon run
 
