@@ -5,7 +5,7 @@ import subprocess
 
 @asset
 def logs_data():
-    df = pd.read_csv("./data/logs.csv")
+    df = pd.read_csv("../data/logs.csv")
     pipeline = dlt.pipeline(
         pipeline_name="from_csv",
         destination="filesystem",

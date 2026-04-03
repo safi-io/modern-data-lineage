@@ -36,6 +36,22 @@ services:
 
   # DAGSTER
 
+
+  dagster-db:
+    image: postgres:16
+    container_name: dagster-db
+    environment:
+      POSTGRES_USER: dagster
+      POSTGRES_PASSWORD: dagster
+      POSTGRES_DB: dagster
+    volumes:
+      - dagster_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dagster"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   webserver:
     build:
       context: ./dagster
@@ -43,14 +59,21 @@ services:
     container_name: dagster-webserver
     environment:
       DAGSTER_HOME: /opt/dagster/
+      DAGSTER_PG_HOST: dagster-db
+      DAGSTER_PG_USER: dagster
+      DAGSTER_PG_PASSWORD: dagster
+      DAGSTER_PG_DB: dagster
     volumes:
-      - ./dagster:/opt/dagster/ 
+      - ./dagster:/opt/dagster/app/
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "3000:3000"
     depends_on:
-      - daemon
-    command: dagit -h 0.0.0.0 -p 3000 -w workspace.yaml
+      dagster-db:
+        condition: service_healthy
+      daemon:
+        condition: service_started
+    command: dagit -h 0.0.0.0 -p 3000 -w /opt/dagster/app/workspace.yaml
 
   daemon:
     build:
@@ -59,11 +82,17 @@ services:
     container_name: dagster-daemon
     environment:
       DAGSTER_HOME: /opt/dagster/
+      DAGSTER_PG_HOST: dagster-db
+      DAGSTER_PG_USER: dagster
+      DAGSTER_PG_PASSWORD: dagster
+      DAGSTER_PG_DB: dagster
     volumes:
-      - ./dagster:/opt/dagster/
-      # For Raw Data Files
+      - ./dagster:/opt/dagster/app/
       - ./data:/opt/dagster/data/
       - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      dagster-db:
+        condition: service_healthy
     command: dagster-daemon run
 
   #S3 Compatible
@@ -131,6 +160,7 @@ services:
       - trino
       
 volumes:
+  dagster_db_data:
   superset_home:
-  minio_data: {}
-  nessie_data: {}
+  minio_data:
+  nessie_data:

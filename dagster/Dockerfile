@@ -1,22 +1,20 @@
 FROM python:3.11-slim
 
-RUN pip install --upgrade pip
-RUN pip install \
-    dagster \
-    dagster-graphql \
-    dagster-webserver \
-    dagster-postgres \
-    dagster-docker \
-    dagit \
-    pandas \
-    "dlt[filesystem]" \
-    "dlt[parquet]" \
-    pyspark
+RUN apt-get update && apt-get install -y \
+    docker.io \
+    gcc \
+    g++ \
+    libpq-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN apt-get update && apt-get install -y docker.io
+RUN pip install --upgrade pip
+
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir -r requirements.txt
 
 ENV DAGSTER_HOME=/opt/dagster/
-
-RUN mkdir -p $DAGSTER_HOME
-
-WORKDIR $DAGSTER_HOME
+RUN mkdir -p /opt/dagster/
+COPY dagster.yaml /opt/dagster/dagster.yaml
+WORKDIR /opt/dagster/app
