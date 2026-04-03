@@ -1,0 +1,12 @@
+# Dagster core
+dagster
+dagster-graphql
+dagster-webserver
+dagster-postgres
+dagster-docker
+dagit
+
+# Data
+pandas
+dlt[filesystem,parquet]
+pyspark
