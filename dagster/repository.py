@@ -3,6 +3,8 @@ import pandas as pd
 import dlt
 import subprocess
 
+from delete_csv_from_minio import delete_csv
+
 
 @asset
 def csv_to_minio():
@@ -25,7 +27,7 @@ def logs_ingest_iceberg_nessie(context):
         "spark",
         "bash",
         "/opt/spark-apps/scripts/run_spark.sh",
-        "logs_ingest_iceberg_nessie.py",
+        "logs_ingest_parquet_write.py",
     ]
 
     result = subprocess.run(command, capture_output=True, text=True)
@@ -33,9 +35,9 @@ def logs_ingest_iceberg_nessie(context):
     context.log.info(result.stdout)
 
     if result.returncode != 0:
-        raise Exception(f"Logs ingest iceberg-nessie job failed: {result.stderr}")
+        raise Exception(f"Logs ingest parquet-write job failed: {result.stderr}")
 
-    return "Logs ingest iceberg-nessie job completed"
+    return "Logs ingest parquet-write job completed"
 
 
 @asset
@@ -60,6 +62,11 @@ def raw_schema_viewer(context):
     return "Raw schema view job completed"
 
 
+@asset
+def delete_csv_after_ingestion(context):
+    delete_csv()
+
+
 defs = Definitions(
-    assets=[csv_to_minio, logs_ingest_iceberg_nessie, raw_schema_viewer],
+    assets=[logs_ingest_iceberg_nessie, delete_csv_after_ingestion, raw_schema_viewer],
 )
