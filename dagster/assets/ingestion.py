@@ -1,25 +1,20 @@
 from dagster import asset
 
-import subprocess
-
 from resources import MinioResource
+
+from run_spark_script import run_spark
+
+import subprocess
 
 
 @asset()
 def logs_ingest_parquet_write(context):
 
-    command = [
-        "docker",
-        "exec",
-        "spark",
-        "bash",
-        "/opt/spark-apps/scripts/run_spark.sh",
-        "logs_ingest_parquet_write.py",
-    ]
-
+    command = run_spark("logs_ingest_parquet_write.py")
+    
+    context.log.info(command)
+    
     result = subprocess.run(command, capture_output=True, text=True)
-
-    context.log.info(result.stdout)
 
     if result.returncode != 0:
         raise Exception(f"Logs ingest parquet-write job failed: {result.stderr}")

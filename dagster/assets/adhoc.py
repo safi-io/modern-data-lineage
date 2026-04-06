@@ -1,19 +1,13 @@
 from dagster import asset
 import subprocess
 
+from run_spark_script import run_spark
 
 @asset
 def raw_schema_viewer(context):
-
-    command = [
-        "docker",
-        "exec",
-        "spark",
-        "bash",
-        "/opt/spark-apps/scripts/run_spark.sh",
-        "raw_schema_viewer.py",
-    ]
-
+    
+    command = run_spark("raw_schema_viewer.py")
+    
     result = subprocess.run(command, capture_output=True, text=True)
 
     context.log.info(result.stdout)

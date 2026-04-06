@@ -3,7 +3,7 @@ from minio import Minio
 
 
 class MinioResource(ConfigurableResource):
-    endpoint: str = EnvVar("MINIO_ENDPOINT")
+    endpoint: str = EnvVar("MINIO_ENDPOINT_RESOURCE")
     access_key: str = EnvVar("MINIO_ACCESS_KEY")
     secret_key: str = EnvVar("MINIO_SECRET_KEY")
 

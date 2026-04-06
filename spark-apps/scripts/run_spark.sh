@@ -8,17 +8,18 @@ fi
 SCRIPT="$1"
 
  /opt/spark/bin/spark-submit \
-    --master spark://spark:7077 \
+    --master $SPARK_URL \
     --packages org.apache.iceberg:iceberg-spark-runtime-4.0_2.13:1.10.1,org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262 \
     --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
     --conf spark.sql.catalog.nessie=org.apache.iceberg.spark.SparkCatalog \
     --conf spark.sql.catalog.nessie.catalog-impl=org.apache.iceberg.nessie.NessieCatalog \
-    --conf spark.sql.catalog.nessie.uri=http://nessie:19120/api/v1 \
-    --conf spark.sql.catalog.nessie.ref=main \
-    --conf spark.sql.catalog.nessie.warehouse=s3a://soc/ \
-    --conf spark.hadoop.fs.s3a.endpoint=http://minio:9000 \
-    --conf spark.hadoop.fs.s3a.access.key=minioadmin \
-    --conf spark.hadoop.fs.s3a.secret.key=minioadmin \
+    --conf spark.sql.catalog.nessie.uri=$NESSIE_ENDPOINT \
+    --conf spark.sql.catalog.nessie.ref=$NESSIE_BRANCH \
+    --conf spark.sql.catalog.nessie.warehouse=$MINIO_BUCKET_URL \
+    --conf spark.hadoop.fs.s3a.endpoint=$MINIO_ENDPOINT \
+    --conf spark.hadoop.fs.s3a.access.key=$MINIO_ACCESS_KEY \
+    --conf spark.hadoop.fs.s3a.secret.key=$MINIO_SECRET_KEY \
+    --conf spark.hadoop.fs.s3a.connection.ssl.enabled=false \
     --conf spark.hadoop.fs.s3a.path.style.access=true \
     --conf spark.hadoop.fs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem \
     --conf spark.hadoop.fs.s3a.aws.credentials.provider=org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider \
