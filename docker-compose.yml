@@ -36,7 +36,6 @@ services:
 
   # DAGSTER
 
-
   dagster-db:
     image: postgres:16
     container_name: dagster-db
@@ -63,6 +62,9 @@ services:
       DAGSTER_PG_USER: dagster
       DAGSTER_PG_PASSWORD: dagster
       DAGSTER_PG_DB: dagster
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
     volumes:
       - ./dagster:/opt/dagster/app/
       - /var/run/docker.sock:/var/run/docker.sock
@@ -86,6 +88,9 @@ services:
       DAGSTER_PG_USER: dagster
       DAGSTER_PG_PASSWORD: dagster
       DAGSTER_PG_DB: dagster
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
     volumes:
       - ./dagster:/opt/dagster/app/
       - ./data:/opt/dagster/data/
@@ -94,8 +99,6 @@ services:
       dagster-db:
         condition: service_healthy
     command: dagster-daemon run
-
-  #S3 Compatible
 
   minio:
     image: quay.io/minio/minio

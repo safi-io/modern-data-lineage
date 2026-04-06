@@ -2,6 +2,8 @@ from dagster import asset
 
 import subprocess
 
+from resources import MinioResource
+
 
 @asset()
 def logs_ingest_parquet_write(context):
@@ -26,13 +28,9 @@ def logs_ingest_parquet_write(context):
 
 
 @asset(deps=["logs_ingest_parquet_write"])
-def delete_csv_after_ingestion(context):
+def delete_csv_after_ingestion(context, minio: MinioResource):
 
-    from minio import Minio
-
-    client = Minio(
-        "minio:9000", access_key="minioadmin", secret_key="minioadmin", secure=False
-    )
+    client = minio.get_client()
 
     bucket_name = "soc"
     folder_prefix = "data/"
@@ -41,5 +39,5 @@ def delete_csv_after_ingestion(context):
 
     for obj in objects:
         if obj.object_name.endswith(".csv"):
-            print(f"Deleting {obj.object_name}")
+            context.log.info(f"Deleting {obj.object_name}")
             client.remove_object(bucket_name, obj.object_name)

@@ -2,15 +2,12 @@ import dagster as dg
 from dagster import RunRequest, sensor
 
 from jobs import ingestion_job
+from resources import MinioResource
 
 
-def check_for_csv() -> bool | list[str]:
+def check_for_csv(minio: MinioResource) -> bool | list[str]:
 
-    from minio import Minio
-
-    client = Minio(
-        "minio:9000", access_key="minioadmin", secret_key="minioadmin", secure=False
-    )
+    client = minio.get_client()
 
     bucket_name = "soc"
     folder_prefix = "data/"
@@ -26,12 +23,12 @@ def check_for_csv() -> bool | list[str]:
 
 @sensor(
     job=ingestion_job,
-    minimum_interval_seconds=3600,
+    minimum_interval_seconds=180,
     default_status=dg.DefaultSensorStatus.STOPPED,
 )
-def ingestion_sensor():
+def ingestion_sensor(minio: MinioResource):
 
-    sensor_response = check_for_csv()
+    sensor_response = check_for_csv(minio)
 
     if not sensor_response:
         yield dg.SkipReason("No new CSV files found")
