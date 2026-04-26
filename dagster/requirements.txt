@@ -11,3 +11,4 @@ pandas
 dlt[filesystem,parquet]
 minio
 pyspark
+psycopg2

@@ -1,7 +1,8 @@
 from dagster import asset
 import subprocess
-
 from run_spark_script import run_spark
+
+from resources import PostgresResource
 
 @asset
 def raw_schema_viewer(context):
@@ -16,3 +17,14 @@ def raw_schema_viewer(context):
         raise Exception(f"Raw schema view job failed: {result.stderr}")
 
     return "Raw schema view job completed"
+
+
+@asset
+def check_postgres_connection(context, postgres_app: PostgresResource):
+    conn = postgres_app.get_connection()
+    with conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1;")
+        result = cursor.fetchone()
+        context.log.info(f"Postgres connection successful: {result}")
+        return result

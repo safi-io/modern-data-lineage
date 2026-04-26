@@ -1,9 +1,9 @@
-from dagster import Definitions, load_assets_from_modules, EnvVar
+from dagster import Definitions, load_assets_from_modules
 
 from assets import ingestion, adhoc
 from jobs import ingestion_job
 from sensors import ingestion_sensor
-from resources import MinioResource
+from resources import MinioResource, PostgresResource
 
 ingestion_assets = load_assets_from_modules([ingestion], group_name="ingestion_assets")
 adhoc_assets = load_assets_from_modules([adhoc])
@@ -13,5 +13,5 @@ defs = Definitions(
     assets=[*ingestion_assets, *adhoc_assets],
     jobs=[ingestion_job],
     sensors=[ingestion_sensor],
-    resources={"minio": MinioResource()},
+    resources={"minio": MinioResource(), "postgres_app": PostgresResource()},
 )

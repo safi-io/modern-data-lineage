@@ -36,6 +36,7 @@ services:
 
   # DAGSTER
 
+  # Dagster Internal DB
   dagster-db:
     image: postgres:16
     container_name: dagster-db
@@ -51,6 +52,19 @@ services:
       timeout: 5s
       retries: 5
 
+  # Dagster App DB
+  app-db:
+    image: postgres:16
+    container_name: app-db
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    volumes:
+      - app_db_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+
   webserver:
     build:
       context: ./dagster
@@ -63,6 +77,13 @@ services:
       DAGSTER_PG_USER: dagster
       DAGSTER_PG_PASSWORD: dagster
       DAGSTER_PG_DB: dagster
+
+      # Custom DB
+      POSTGRES_APP_HOST: app-db
+      POSTGRES_APP_PORT: 5432
+      POSTGRES_APP_USER: app
+      POSTGRES_APP_PASSWORD: app
+      POSTGRES_APP_DATABASE: app
 
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ENDPOINT_RESOURCE: minio:9000
@@ -99,6 +120,13 @@ services:
       DAGSTER_PG_USER: dagster
       DAGSTER_PG_PASSWORD: dagster
       DAGSTER_PG_DB: dagster
+      
+      # Custom DB
+      POSTGRES_APP_HOST: app-db
+      POSTGRES_APP_PORT: 5432
+      POSTGRES_APP_USER: app
+      POSTGRES_APP_PASSWORD: app
+      POSTGRES_APP_DATABASE: app
 
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ENDPOINT_RESOURCE: minio:9000
@@ -183,6 +211,7 @@ services:
       
 volumes:
   dagster_db_data:
+  app_db_data:
   superset_home:
   minio_data:
   nessie_data:
