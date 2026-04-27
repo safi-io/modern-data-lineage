@@ -8,7 +8,7 @@ storage:
       hostname:
         env: DAGSTER_PG_HOST
       db_name:
-        env: DAGSTER_PG_DB
+        env: DAGSTER_INTERNAL_PG_DB
       port: 5432
 
 compute_logs:

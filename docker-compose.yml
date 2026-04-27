@@ -46,24 +46,12 @@ services:
       POSTGRES_DB: dagster
     volumes:
       - dagster_db_data:/var/lib/postgresql/data
+      - ./init-multiple-dbs.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dagster"]
       interval: 5s
       timeout: 5s
       retries: 5
-
-  # Dagster App DB
-  app-db:
-    image: postgres:16
-    container_name: app-db
-    environment:
-      POSTGRES_USER: app
-      POSTGRES_PASSWORD: app
-      POSTGRES_DB: app
-    volumes:
-      - app_db_data:/var/lib/postgresql/data
-    ports:
-      - "5433:5432"
 
   webserver:
     build:
@@ -74,16 +62,12 @@ services:
       DAGSTER_HOME: /opt/dagster/
 
       DAGSTER_PG_HOST: dagster-db
+      DAGSTER_PG_PORT: 5432
       DAGSTER_PG_USER: dagster
       DAGSTER_PG_PASSWORD: dagster
-      DAGSTER_PG_DB: dagster
 
-      # Custom DB
-      POSTGRES_APP_HOST: app-db
-      POSTGRES_APP_PORT: 5432
-      POSTGRES_APP_USER: app
-      POSTGRES_APP_PASSWORD: app
-      POSTGRES_APP_DATABASE: app
+      DAGSTER_INTERNAL_PG_DB: dagster
+      DAGSTER_CUSTOM_PG_DB: custom
 
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ENDPOINT_RESOURCE: minio:9000
@@ -117,16 +101,12 @@ services:
       DAGSTER_HOME: /opt/dagster/
 
       DAGSTER_PG_HOST: dagster-db
+      DAGSTER_PG_PORT: 5432
       DAGSTER_PG_USER: dagster
       DAGSTER_PG_PASSWORD: dagster
-      DAGSTER_PG_DB: dagster
-      
-      # Custom DB
-      POSTGRES_APP_HOST: app-db
-      POSTGRES_APP_PORT: 5432
-      POSTGRES_APP_USER: app
-      POSTGRES_APP_PASSWORD: app
-      POSTGRES_APP_DATABASE: app
+
+      DAGSTER_INTERNAL_PG_DB: dagster
+      DAGSTER_CUSTOM_PG_DB: custom
 
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ENDPOINT_RESOURCE: minio:9000

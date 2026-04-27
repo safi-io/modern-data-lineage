@@ -11,9 +11,9 @@ import subprocess
 def logs_ingest_parquet_write(context):
 
     command = run_spark("logs_ingest_parquet_write.py")
-    
+
     context.log.info(command)
-    
+
     result = subprocess.run(command, capture_output=True, text=True)
 
     if result.returncode != 0:
