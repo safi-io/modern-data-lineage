@@ -1,7 +1,7 @@
 import dagster as dg
-from dagster import RunRequest, sensor
+from dagster import sensor
 
-from jobs import ingestion_job
+from jobs import ingestion_job, psql_new_files
 from resources import MinioResource
 
 
@@ -28,6 +28,9 @@ def check_for_csv(minio: MinioResource) -> bool | list[str]:
 )
 def ingestion_sensor(minio: MinioResource):
 
+    # Convert the functionality from checking minio and then processing CSV's
+    # Just check PSQL and then process CSV's according to the file status.
+
     sensor_response = check_for_csv(minio)
 
     if not sensor_response:
@@ -35,3 +38,22 @@ def ingestion_sensor(minio: MinioResource):
         return
 
     yield dg.RunRequest(run_key="-".join(sorted(sensor_response)))
+
+
+@sensor(
+    job=psql_new_files,
+    minimum_interval_seconds=60,
+    default_status=dg.DefaultSensorStatus.STOPPED,
+)
+def s3_csv_check_sensor(context, minio: MinioResource):
+
+    sensor_response = check_for_csv(minio)
+
+    if not sensor_response:
+        yield dg.SkipReason("No new CSV files found")
+        return
+
+    yield dg.RunRequest(
+        run_key="-".join(sorted(sensor_response)),
+        run_config={"ops": {"process_files": {"config": {"files": sensor_response}}}},
+    )

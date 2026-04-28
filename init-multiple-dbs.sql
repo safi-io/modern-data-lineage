@@ -9,6 +9,6 @@ CREATE TYPE file_status_enum AS ENUM (
 );
 
 CREATE TABLE file_status (
-    file_name TEXT,
+    file_name TEXT PRIMARY KEY,
     status file_status_enum
 );
