@@ -1,32 +1,47 @@
 from pyspark.sql import SparkSession
 from datetime import datetime
 import argparse
-from urllib.parse import urlparse
+import logging
+import sys
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | job_id=%(job_id)s | %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+
+base_logger = logging.getLogger(__name__)
+
+class JobAdapter(logging.LoggerAdapter):
+    def process(self, msg, kwargs):
+        return msg, {"extra": {"job_id": self.extra["job_id"]}}
 
 spark = SparkSession.builder.getOrCreate()
 
-# Parse job_id
 parser = argparse.ArgumentParser()
 parser.add_argument("--job_id", required=True)
 args = parser.parse_args()
 
 job_id = args.job_id
+logger = JobAdapter(base_logger, {"job_id": job_id})
 
-# Read DB config from Spark conf
+logger.info("Spark job started")
+
 jdbc_url = spark.conf.get("spark.app.postgres.url")
 db_user = spark.conf.get("spark.app.postgres.user")
 db_password = spark.conf.get("spark.app.postgres.password")
 
-# Build query safely
+logger.info(f"Connecting to Postgres: {jdbc_url}")
+
 query = f"""
 (SELECT file_name
  FROM file_status
  WHERE job_id = '{job_id}'
-   AND status = 'inprogress')
+   AND status = 'inprogress') as tmp
 """
 
-# Read from Postgres
+logger.info("Executing JDBC query")
+
 df = (
     spark.read
     .format("jdbc")
@@ -38,18 +53,21 @@ df = (
     .load()
 )
 
-if df.rdd.isEmpty():
-    print(f"No files to process for job_id={job_id}")
+count = df.limit(1).count()
+logger.info(f"Records fetched: {count}")
+
+if count == 0:
+    logger.warning("No files to process")
     spark.stop()
     exit(0)
 
 files = [row.file_name for row in df.collect()]
-s3_paths = [f"s3a://soc/{file}" for file in files]
+logger.info(f"Files to process: {files}")
 
-if not s3_paths:
-    print("No files to process")
-    spark.stop()
-    exit(0)
+s3_paths = [f"s3a://soc/{file}" for file in files]
+logger.info(f"S3 paths: {s3_paths}")
+
+logger.info("Reading CSV files from S3")
 
 df = (
     spark.read
@@ -58,15 +76,26 @@ df = (
     .csv(s3_paths)
 )
 
-# Iceberg write
+logger.info(f"CSV rows read: {df.count()}")
+
+logger.info("Ensuring namespace exists")
+
 spark.sql("CREATE NAMESPACE IF NOT EXISTS nessie.raw")
 
-df.writeTo("nessie.raw.stream_ldap").append()
+logger.info("Writing to Iceberg table")
 
-# Archive path
-ARCHIVED_PARQUET_PATH = f"s3a://soc/data/archived/{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+# TODO: Replace with append.
+df.writeTo("nessie.raw.stream_ldap").createOrReplace()
 
-df.write.parquet(ARCHIVED_PARQUET_PATH)
+archive_path = f"s3a://soc/data/archived/{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+logger.info(f"Archiving to: {archive_path}")
 
-# Verification
+df.write.parquet(archive_path)
+
+logger.info("Verifying write")
+
 spark.sql("SELECT count(*) FROM nessie.raw.stream_ldap").show()
+
+logger.info("Job completed successfully")
+
+spark.stop()
