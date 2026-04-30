@@ -5,7 +5,7 @@ ingestion_job = define_asset_job(
     name="ingestion_job", selection=AssetSelection.groups("ingestion_assets")
 )
 
-# Todo: Refactor the op.
+# TODO: Refactor the op.
 @op(config_schema={"files": list}, required_resource_keys={"postgres_app"})
 def process_files(context):
     files = context.op_config["files"]

@@ -6,10 +6,11 @@ if [ -z "$1" ]; then
 fi
 
 SCRIPT="$1"
+JOB_ID="$2"
 
  /opt/spark/bin/spark-submit \
     --master $SPARK_URL \
-    --packages org.apache.iceberg:iceberg-spark-runtime-4.0_2.13:1.10.1,org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262 \
+    --packages org.apache.iceberg:iceberg-spark-runtime-4.0_2.13:1.10.1,org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262, org.postgresql:postgresql:42.7.3 \
     --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
     --conf spark.sql.catalog.nessie=org.apache.iceberg.spark.SparkCatalog \
     --conf spark.sql.catalog.nessie.catalog-impl=org.apache.iceberg.nessie.NessieCatalog \
@@ -31,4 +32,8 @@ SCRIPT="$1"
     --conf spark.hadoop.fs.s3a.retry.throttle.interval=500 \
     --conf spark.hadoop.fs.s3a.assumed.role.session.duration=3600000 \
     --conf spark.hadoop.fs.s3a.delegation.token.duration=3600000 \
-    "/opt/spark-apps/$SCRIPT"
+    --conf spark.app.postgres.url=$POSTGRES_URL \
+    --conf spark.app.postgres.user=$POSTGRES_USER \
+    --conf spark.app.postgres.password=$POSTGRES_PASSWORD \
+    "/opt/spark-apps/$SCRIPT" \
+    --job_id "$JOB_ID"
