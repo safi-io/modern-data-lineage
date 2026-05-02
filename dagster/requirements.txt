@@ -8,7 +8,6 @@ dagit
 
 # Data
 pandas
-dlt[filesystem,parquet]
 minio
 pyspark
 psycopg2

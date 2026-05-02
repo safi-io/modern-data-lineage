@@ -1,7 +1,7 @@
 import dagster as dg
 from dagster import sensor
 
-from jobs import ingestion_job
+from jobs import bronze_logs_ingestion_job
 from resources import PostgresResource
 
 import uuid
@@ -10,7 +10,7 @@ from .utils.postgres_utils import has_new_files, mark_files_inprogress
 
 
 @sensor(
-    job=ingestion_job,
+    job=bronze_logs_ingestion_job,
     minimum_interval_seconds=50,
     default_status=dg.DefaultSensorStatus.STOPPED,
 )

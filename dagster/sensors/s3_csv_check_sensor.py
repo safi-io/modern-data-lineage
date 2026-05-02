@@ -1,14 +1,14 @@
 import dagster as dg
 from dagster import sensor
 
-from jobs import psql_new_files
+from jobs import file_registration_job
 from resources import MinioResource
 
 from .utils.s3_utils import list_csv_files_from_s3
 
 
 @sensor(
-    job=psql_new_files,
+    job=file_registration_job,
     minimum_interval_seconds=60,
     default_status=dg.DefaultSensorStatus.STOPPED,
 )
@@ -22,5 +22,5 @@ def s3_csv_check_sensor(context, minio: MinioResource):
         return
 
     yield dg.RunRequest(
-        run_config={"ops": {"process_files": {"config": {"files": sensor_response}}}},
+        run_config={"ops": {"register_new_files_into_postgres": {"config": {"files": sensor_response}}}},
     )

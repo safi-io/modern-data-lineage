@@ -1,10 +1,9 @@
 from dagster import asset
 
-from resources import MinioResource
-
-from run_spark_script import run_spark
+from .utils.run_spark_script import run_spark
 
 import subprocess
+
 
 @asset(required_resource_keys={"postgres_app"})
 def logs_ingest_parquet_write(context):
@@ -21,7 +20,6 @@ def logs_ingest_parquet_write(context):
     context.log.error("STDERR:\n" + result.stderr)
 
     postgres = context.resources.postgres_app
-
     conn = postgres.get_connection()
 
     try:
@@ -67,19 +65,3 @@ def logs_ingest_parquet_write(context):
         raise Exception("Spark job failed:\n" + result.stdout + "\n" + result.stderr)
 
     return "Logs ingest parquet-write job completed"
-
-
-# @asset(deps=["logs_ingest_parquet_write"])
-# def delete_csv_after_ingestion(context, minio: MinioResource):
-
-#     client = minio.get_client()
-
-#     bucket_name = "soc"
-#     folder_prefix = "data/"
-
-#     objects = client.list_objects(bucket_name, prefix=folder_prefix, recursive=False)
-
-#     for obj in objects:
-#         if obj.object_name.endswith(".csv"):
-#             context.log.info(f"Deleting {obj.object_name}")
-#             client.remove_object(bucket_name, obj.object_name)
