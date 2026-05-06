@@ -1,0 +1,26 @@
+modern_data_lineage:
+  outputs:
+
+    dev:
+      type: trino
+      method: none  # optional, one of {none | ldap | kerberos}
+      user: admin
+      password: ""
+      host: trino
+      port: 8080
+      catalog: nessie
+      schema: raw
+      threads: 4
+
+    prod:
+      type: trino
+      method: none  # optional, one of {none | ldap | kerberos}
+      user: [prod_user]
+      password: [prod_password]  # required if method is ldap or kerberos
+      database: [database name]
+      host: [hostname]
+      port: [port number]
+      schema: [prod_schema]
+      threads: [1 or more]
+
+  target: dev

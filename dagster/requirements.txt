@@ -11,3 +11,7 @@ pandas
 minio
 pyspark
 psycopg2
+
+# DBT
+dbt-core
+dbt-trino
