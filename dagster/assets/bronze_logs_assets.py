@@ -5,7 +5,7 @@ from .utils.run_spark_script import run_spark
 import subprocess
 
 
-@asset(required_resource_keys={"postgres_app"})
+@asset(required_resource_keys={"postgres_app"}, key=["raw", "stream_ldap"],)
 def logs_ingest_parquet_write(context):
 
     job_id = context.op_config["job_id"]

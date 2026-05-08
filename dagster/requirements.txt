@@ -13,5 +13,6 @@ pyspark
 psycopg2
 
 # DBT
+dagster-dbt
 dbt-core
 dbt-trino

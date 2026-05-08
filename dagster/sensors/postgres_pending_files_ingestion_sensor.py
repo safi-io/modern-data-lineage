@@ -34,7 +34,7 @@ def postgres_pending_files_ingestion_sensor(postgres_app: PostgresResource):
         yield dg.RunRequest(
             run_key=f"job-{job_id}",
             run_config={
-                "ops": {"logs_ingest_parquet_write": {"config": {"job_id": job_id}}}
+                "ops": {"raw__stream_ldap": {"config": {"job_id": job_id}}}
             },
         )
 

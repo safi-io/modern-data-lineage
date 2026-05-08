@@ -1,6 +1,7 @@
 {{ config(
     materialized='table',
-    schema='cleaned'
+    schema='cleaned',
+    tags=['cleaned']
 ) }}
 
 select *

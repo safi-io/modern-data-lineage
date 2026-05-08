@@ -82,7 +82,10 @@ services:
 
     volumes:
       - ./dagster:/opt/dagster/app/
+      - ./dbt:/opt/dagster/dbt
+      - ./data:/opt/dagster/data/
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./dbt/modern_data_lineage/dbt:/root/.dbt
     ports:
       - "3000:3000"
     depends_on:
@@ -119,15 +122,13 @@ services:
       NESSIE_ENDPOINT: http://nessie:19120/api/v1
       NESSIE_BRANCH: main
 
-      # DBT Secrets
-      
-
-
     volumes:
       - ./dagster:/opt/dagster/app/
       - ./dbt:/opt/dagster/dbt
       - ./data:/opt/dagster/data/
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./dbt/modern_data_lineage/dbt:/root/.dbt
+
     depends_on:
       dagster-db:
         condition: service_healthy

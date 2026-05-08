@@ -5,7 +5,7 @@ from .utils.run_spark_script import run_spark
 from resources import PostgresResource
 
 
-@asset
+@asset(group_name="ops")
 def raw_schema_viewer(context):
 
     command = run_spark("raw_schema_viewer.py")
@@ -20,7 +20,7 @@ def raw_schema_viewer(context):
     return "Raw schema view job completed"
 
 
-@asset
+@asset(group_name="ops")
 def check_postgres_connection(context, postgres_app: PostgresResource):
     conn = postgres_app.get_connection()
     with conn:
