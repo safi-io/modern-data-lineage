@@ -76,6 +76,17 @@ df = (
     .csv(s3_paths)
 )
 
+spark.conf.set("spark.sql.csv.maxCharsPerColumn", "1000000")
+
+df = (
+    spark.read
+    .option("header", "true")
+    .option("quote", "\"")    
+    .option("escape", "\"")
+    .option("multiLine", "true")
+    .csv(s3_paths)
+)
+
 logger.info(f"CSV rows read: {df.count()}")
 
 logger.info("Ensuring namespace exists")
