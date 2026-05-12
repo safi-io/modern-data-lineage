@@ -11,4 +11,4 @@ DBT_PROJECT_DIR = "/opt/dagster/dbt/modern_data_lineage"
     dagster_dbt_translator=CustomDagsterDbtTranslator(),
 )
 def cleaned_assets(context, dbt: DbtCliResource):
-    yield from dbt.cli(["build", "--select", "tag:cleaned"], context=context).stream()
+    yield from dbt.cli(["build"], context=context).stream()
