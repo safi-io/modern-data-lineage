@@ -2,8 +2,6 @@ version: '3.8'
 
 services:
 
-  # SPARK
-
   spark:
     image: apache/spark:4.0.2-scala2.13-java17-python3-r-ubuntu
     container_name: spark
@@ -17,7 +15,9 @@ services:
       - "8081:8080"
     volumes:
       - ./spark-apps:/opt/spark-apps
-  
+    env_file:
+      - .env
+
   spark-worker:
     image: apache/spark:4.0.2-scala2.13-java17-python3-r-ubuntu
     container_name: spark-worker
@@ -25,61 +25,35 @@ services:
     depends_on:
       - spark
     environment:
-      - SPARK_MODE=worker
-      - SPARK_MASTER_URL=spark://spark:7077
+      - SPARK_MODE=worker0
     command: >
       /bin/bash -c "/opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark:7077"
     ports:
       - "8082:8081"
     volumes:
       - ./spark-apps:/opt/spark-apps
+    env_file:
+      - .env
 
-  # DAGSTER
-
-  # Dagster Internal DB
   dagster-db:
     image: postgres:16
     container_name: dagster-db
-    environment:
-      POSTGRES_USER: dagster
-      POSTGRES_PASSWORD: dagster
-      POSTGRES_DB: dagster
     volumes:
       - dagster_db_data:/var/lib/postgresql/data
-      - ./init-multiple-dbs.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./docker/init-multiple-dbs.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dagster"]
       interval: 5s
       timeout: 5s
       retries: 5
+    env_file:
+      - .env
 
   webserver:
     build:
       context: ./dagster
       dockerfile: Dockerfile
     container_name: dagster-webserver
-    environment:
-      DAGSTER_HOME: /opt/dagster/
-
-      DAGSTER_PG_HOST: dagster-db
-      DAGSTER_PG_PORT: 5432
-      DAGSTER_PG_USER: dagster
-      DAGSTER_PG_PASSWORD: dagster
-
-      DAGSTER_INTERNAL_PG_DB: dagster
-      DAGSTER_CUSTOM_PG_DB: custom
-
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ENDPOINT_RESOURCE: minio:9000
-      MINIO_BUCKET_URL: s3a://soc/
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
-
-      SPARK_URL: spark://spark:7077
-
-      NESSIE_ENDPOINT: http://nessie:19120/api/v1
-      NESSIE_BRANCH: main
-
     volumes:
       - ./dagster:/opt/dagster/app/
       - ./dbt:/opt/dagster/dbt
@@ -94,45 +68,26 @@ services:
       daemon:
         condition: service_started
     command: dagit -h 0.0.0.0 -p 3000 -w /opt/dagster/app/workspace.yaml
+    env_file:
+      - .env
 
   daemon:
     build:
       context: ./dagster
       dockerfile: Dockerfile
     container_name: dagster-daemon
-    environment:
-      DAGSTER_HOME: /opt/dagster/
-
-      DAGSTER_PG_HOST: dagster-db
-      DAGSTER_PG_PORT: 5432
-      DAGSTER_PG_USER: dagster
-      DAGSTER_PG_PASSWORD: dagster
-
-      DAGSTER_INTERNAL_PG_DB: dagster
-      DAGSTER_CUSTOM_PG_DB: custom
-
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ENDPOINT_RESOURCE: minio:9000
-      MINIO_BUCKET_URL: s3a://soc/
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
-
-      SPARK_URL: spark://spark:7077
-
-      NESSIE_ENDPOINT: http://nessie:19120/api/v1
-      NESSIE_BRANCH: main
-
     volumes:
       - ./dagster:/opt/dagster/app/
       - ./dbt:/opt/dagster/dbt
       - ./data:/opt/dagster/data/
       - /var/run/docker.sock:/var/run/docker.sock
       - ./dbt/modern_data_lineage/dbt:/root/.dbt
-
     depends_on:
       dagster-db:
         condition: service_healthy
     command: dagster-daemon run
+    env_file:
+      - .env
 
   minio:
     image: quay.io/minio/minio
@@ -141,11 +96,10 @@ services:
     ports:
       - "9000:9000"
       - "9001:9001"
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
     volumes:
       - minio_data:/data
+    env_file:
+      - .env
 
   nessie:
     image: ghcr.io/projectnessie/nessie
@@ -154,10 +108,8 @@ services:
       - "19120:19120"
     volumes:
       - nessie_data:/data
-    environment:
-      - QUARKUS_DATASOURCE_JDBC_URL=
-      - nessie.version.store.type=ROCKSDB
-      - nessie.version.store.persist.rocks.db-path=/data/rocksdb
+    env_file:
+      - .env
 
   trino:
     image: trinodb/trino
@@ -169,34 +121,24 @@ services:
     depends_on:
       - minio
       - nessie
+    env_file:
+      - .env   
 
   superset:
     image: apache/superset:3.1.1
     container_name: superset
     ports:
       - "8088:8088"
-    environment:
-      - SUPERSET_SECRET_KEY=supersecretkey
     volumes:
       - superset_home:/app/superset_home
-    command: >
-      /bin/sh -c "
-      pip install trino==0.336.0 &&
-      pip install sqlalchemy-trino==0.5.0 &&
-      superset db upgrade &&
-      superset fab create-admin \
-          --username safi \
-          --firstname Superset \
-          --lastname Admin \
-          --email safi@superset.com \
-          --password safi &&
-      superset init &&
-      superset run -h 0.0.0.0 -p 8088
-      "
+      - ./docker/superset-init.sh:/app/superset-init.sh
+    entrypoint: ["/bin/sh", "/app/superset-init.sh"]
+    env_file:
+      - .env
     depends_on:
       - trino
       
-volumes:
+volumes: 
   dagster_db_data:
   app_db_data:
   superset_home:

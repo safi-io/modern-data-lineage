@@ -8,3 +8,5 @@ logs/
 history/
 storage/
 schedules/
+
+.env
