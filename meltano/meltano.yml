@@ -1,0 +1,39 @@
+default_environment: dev
+project_id: 019f07a1-03bd-7049-9d92-4d7133324396
+environments:
+- name: dev
+- name: staging
+- name: prod
+plugins:
+  extractors:
+  - name: tap-postgres
+    variant: transferwise
+    pip_url: git+https://github.com/transferwise/pipelinewise.git#subdirectory=singer-connectors/tap-postgres
+    config:
+      host: ${TAP_POSTGRES_HOST}
+      port: ${TAP_POSTGRES_PORT}
+      user: ${TAP_POSTGRES_USER}
+      password: ${TAP_POSTGRES_PASSWORD}
+      dbname: ${TAP_POSTGRES_DBNAME}
+      default_replication_method: FULL_TABLE
+      replication_key: id
+    select:
+    - public-tmp
+
+  loaders:
+  - name: target-clickhouse
+    variant: shaped-ai
+    pip_url: git+https://github.com/shaped-ai/target-clickhouse.git
+    config:
+      host: ${TARGET_CLICKHOUSE_HOST}
+      port: ${TARGET_CLICKHOUSE_PORT}
+      username: ${TARGET_CLICKHOUSE_USERNAME}
+      password: ${TARGET_CLICKHOUSE_PASSWORD}
+      database: ${TARGET_CLICKHOUSE_DATABASE}
+      engine_type: ${TARGET_CLICKHOUSE_ENGINE_TYPE}
+      default_target_schema: ${TARGET_CLICKHOUSE_DEFAULT_TARGET_SCHEMA}
+
+jobs:
+- name: pg-ch
+  tasks:
+  - tap-postgres target-clickhouse

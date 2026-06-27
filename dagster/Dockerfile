@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y \
     docker.io \
@@ -10,11 +10,16 @@ RUN apt-get update && apt-get install -y \
 
 RUN pip install --upgrade pip
 
-COPY requirements.txt .
+COPY dagster/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
-RUN pip install --no-cache-dir -r requirements.txt
+ENV DAGSTER_HOME=/opt/dagster
 
-ENV DAGSTER_HOME=/opt/dagster/
-RUN mkdir -p /opt/dagster/
-COPY dagster.yaml /opt/dagster/dagster.yaml
+COPY meltano /opt/dagster/meltano
+
+WORKDIR /opt/dagster/meltano
+RUN meltano install
+
+COPY dagster/dagster.yaml /opt/dagster/dagster.yaml
+
 WORKDIR /opt/dagster/app

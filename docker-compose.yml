@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
 
   spark:
@@ -53,8 +51,8 @@ services:
 
   webserver:
     build:
-      context: ./dagster
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: dagster/Dockerfile
     container_name: dagster-webserver
     volumes:
       - ./dagster:/opt/dagster/app/
@@ -75,8 +73,8 @@ services:
 
   daemon:
     build:
-      context: ./dagster
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: dagster/Dockerfile
     container_name: dagster-daemon
     volumes:
       - ./dagster:/opt/dagster/app/
@@ -139,10 +137,28 @@ services:
       - .env
     depends_on:
       - trino
-      
+    
+  clickhouse:
+    image: clickhouse:lts-jammy
+    container_name: clickhouse
+    restart: unless-stopped
+    ports:
+      - "8123:8123"
+      - "10000:9000"
+    environment:
+      CLICKHOUSE_DB: mel
+      CLICKHOUSE_USER: safi
+      CLICKHOUSE_PASSWORD: safi
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_log:/var/log/clickhouse-server  
+
 volumes: 
   dagster_db_data:
   app_db_data:
   superset_home:
   minio_data:
   nessie_data:
+  clickhouse_data:
+  clickhouse_log:

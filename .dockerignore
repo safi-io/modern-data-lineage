@@ -1,0 +1,42 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+
+# IDE
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# ==========================
+# Meltano
+# ==========================
+meltano/.meltano/
+meltano/.venv/
+
+# ==========================
+# Dagster
+# ==========================
+dagster/__pycache__/
+dagster/.pytest_cache/

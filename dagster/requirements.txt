@@ -16,3 +16,6 @@ psycopg2
 dagster-dbt
 dbt-core
 dbt-trino
+
+# Meltano
+meltano==4.2.1
