@@ -18,7 +18,7 @@ plugins:
       default_replication_method: FULL_TABLE
       replication_key: id
     select:
-    - public-tmp
+    - public-job_ticks
 
   loaders:
   - name: target-clickhouse
