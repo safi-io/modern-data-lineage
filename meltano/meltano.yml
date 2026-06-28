@@ -15,7 +15,7 @@ plugins:
       user: ${TAP_POSTGRES_USER}
       password: ${TAP_POSTGRES_PASSWORD}
       dbname: ${TAP_POSTGRES_DBNAME}
-      default_replication_method: FULL_TABLE
+      default_replication_method: LOG_BASED
       replication_key: id
     select:
     - public-job_ticks

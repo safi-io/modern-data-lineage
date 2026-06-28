@@ -1,4 +1,5 @@
-CREATE DATABASE custom;
+CREATE DATABASE meltano; -- For managing Meltano State Backend
+CREATE DATABASE custom; -- For managing Data Platform Logic
 \c custom;
 
 CREATE TYPE file_status_enum AS ENUM (
