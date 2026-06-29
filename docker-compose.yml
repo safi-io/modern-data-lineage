@@ -34,7 +34,9 @@ services:
       - .env
 
   dagster-db:
-    image: postgres:16
+    build:
+      context: .
+      dockerfile: docker/postgres/Dockerfile
     container_name: dagster-db
     volumes:
       - dagster_db_data:/var/lib/postgresql/data
