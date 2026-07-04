@@ -1,8 +1,14 @@
+x-logging: &default-logging
+  driver: fluentd
+  options:
+    fluentd-address: 127.0.0.1:24225
+
 services:
 
   spark:
     image: apache/spark:4.0.2-scala2.13-java17-python3-r-ubuntu
     container_name: spark
+    logging: *default-logging
     user: root
     environment:
       - SPARK_MODE=master
@@ -19,6 +25,7 @@ services:
   spark-worker:
     image: apache/spark:4.0.2-scala2.13-java17-python3-r-ubuntu
     container_name: spark-worker
+    logging: *default-logging
     user: root
     depends_on:
       - spark
@@ -38,9 +45,11 @@ services:
       context: .
       dockerfile: docker/postgres/Dockerfile
     container_name: dagster-db
+    logging: *default-logging
     volumes:
       - dagster_db_data:/var/lib/postgresql/data
       - ./docker/init-multiple-dbs.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./docker/postgres/custom-postgres.conf:/etc/postgresql/postgresql.conf
     ports:
       - "5432:5432"
     healthcheck:
@@ -50,12 +59,14 @@ services:
       retries: 5
     env_file:
       - .env
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
 
   webserver:
     build:
       context: .
       dockerfile: dagster/Dockerfile
     container_name: dagster-webserver
+    logging: *default-logging
     volumes:
       - ./dagster:/opt/dagster/app/
       - ./dbt:/opt/dagster/dbt
@@ -78,6 +89,7 @@ services:
       context: .
       dockerfile: dagster/Dockerfile
     container_name: dagster-daemon
+    logging: *default-logging
     volumes:
       - ./dagster:/opt/dagster/app/
       - ./dbt:/opt/dagster/dbt
@@ -94,9 +106,10 @@ services:
   minio:
     image: quay.io/minio/minio
     container_name: minio
+    logging: *default-logging
     command: server /data --console-address ":9001"
     ports:
-      - "9000:9000"
+      - "8999:9000"
       - "9001:9001"
     volumes:
       - minio_data:/data
@@ -106,6 +119,7 @@ services:
   nessie:
     image: ghcr.io/projectnessie/nessie
     container_name: nessie
+    logging: *default-logging
     ports:
       - "19120:19120"
     volumes:
@@ -116,8 +130,9 @@ services:
   trino:
     image: trinodb/trino
     container_name: trino
-    ports:
-      - "8080:8080"
+    logging: *default-logging
+    # ports:
+    #   - "8080:8080"
     volumes:
       - ./trino/catalog:/etc/trino/catalog
     depends_on:
@@ -129,6 +144,7 @@ services:
   superset:
     image: apache/superset:3.1.1
     container_name: superset
+    logging: *default-logging
     ports:
       - "8088:8088"
     volumes:
@@ -143,6 +159,7 @@ services:
   clickhouse:
     image: clickhouse:lts-jammy
     container_name: clickhouse
+    logging: *default-logging
     restart: unless-stopped
     ports:
       - "8123:8123"
