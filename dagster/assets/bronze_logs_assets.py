@@ -12,8 +12,10 @@ def logs_ingest_parquet_write(context):
 
     command = run_spark("logs_ingest_parquet_write.py", job_id)
 
+    # Context.log is basically Dagster's Logger
     context.log.info(f"Running: {command}")
 
+    # Launching Spark as a Child Process
     process = subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
@@ -22,16 +24,12 @@ def logs_ingest_parquet_write(context):
         bufsize=1                 
     )
 
-    spark_logs = []
-
     for line in process.stdout:
         cleaned = line.rstrip()
         context.log.info(cleaned)
-        spark_logs.append(cleaned)
 
+    # Even the loop ensures that child process is completed
     process.wait()
-
-    full_logs = "\n".join(spark_logs)
 
     postgres = context.resources.postgres_app
     conn = postgres.get_connection()
