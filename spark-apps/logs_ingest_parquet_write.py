@@ -1,20 +1,9 @@
 from pyspark.sql import SparkSession
 from datetime import datetime
 import argparse
-import logging
-import sys
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | job_id=%(job_id)s | %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-
-base_logger = logging.getLogger(__name__)
-
-class JobAdapter(logging.LoggerAdapter):
-    def process(self, msg, kwargs):
-        return msg, {"extra": {"job_id": self.extra["job_id"]}}
+# Logging Imports
+from logging_config_spark import JobAdapter, base_logger
 
 spark = SparkSession.builder.getOrCreate()
 
@@ -96,6 +85,7 @@ spark.sql("CREATE NAMESPACE IF NOT EXISTS nessie.raw")
 logger.info("Writing to Iceberg table")
 
 # TODO: Replace with append.
+# Fix this, first time it's need to be create and then append
 df.writeTo("nessie.raw.stream_ldap").createOrReplace()
 
 archive_path = f"s3a://soc/data/archived/{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"

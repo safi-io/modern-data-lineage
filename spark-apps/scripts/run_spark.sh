@@ -3,28 +3,26 @@
 set -e
 set -o pipefail
 
-LOG_FILE="/tmp/spark_job_$(date +%Y%m%d_%H%M%S).log"
-
-echo "======================" | tee -a "$LOG_FILE"
-echo "Spark Job Launcher" | tee -a "$LOG_FILE"
-echo "Timestamp: $(date)" | tee -a "$LOG_FILE"
-echo "======================" | tee -a "$LOG_FILE"
+echo "======================"
+echo "Spark Job Launcher"
+echo "Timestamp: $(date)"
+echo "======================"
 
 # Input validation
 if [ -z "$1" ]; then
-  echo "ERROR: No script provided" | tee -a "$LOG_FILE"
-  echo "Usage: $0 <spark_python_script> [job_id]" | tee -a "$LOG_FILE"
+  echo "ERROR: No script provided"
+  echo "Usage: $0 <spark_python_script> [job_id]"
   exit 1
 fi
 
 SCRIPT="$1"
 JOB_ID="$2"
 
-echo "Script: $SCRIPT" | tee -a "$LOG_FILE"
-echo "Job ID: $JOB_ID" | tee -a "$LOG_FILE"
+echo "Script: $SCRIPT"
+echo "Job ID: $JOB_ID"
 
 # Validate environment variables
-echo "Validating environment variables..." | tee -a "$LOG_FILE"
+echo "Validating environment variables..."
 
 REQUIRED_VARS=(
   SPARK_URL
@@ -41,14 +39,14 @@ REQUIRED_VARS=(
 
 for VAR in "${REQUIRED_VARS[@]}"; do
   if [ -z "${!VAR}" ]; then
-    echo "ERROR: $VAR is not set" | tee -a "$LOG_FILE"
+    echo "ERROR: $VAR is not set"
     exit 1
   else
-    echo "$VAR is set" | tee -a "$LOG_FILE"
+    echo "$VAR is set"
   fi
 done
 
-echo "Submitting Spark Job..." | tee -a "$LOG_FILE"
+echo "Submitting Spark Job..."
 
 START_TIME=$(date +%s)
 
@@ -81,20 +79,19 @@ START_TIME=$(date +%s)
     --conf spark.app.postgres.password="$POSTGRES_PASSWORD" \
     "/opt/spark-apps/$SCRIPT" \
     --job_id "$JOB_ID" \
-    2>&1 | tee -a "$LOG_FILE"
+    2>&1
 
-EXIT_CODE=${PIPESTATUS[0]}
+EXIT_CODE=$?
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))
 
-echo "Job Summary" | tee -a "$LOG_FILE"
-echo "Exit Code: $EXIT_CODE" | tee -a "$LOG_FILE"
-echo "Duration: ${DURATION}s" | tee -a "$LOG_FILE"
-echo "Log File: $LOG_FILE" | tee -a "$LOG_FILE"
+echo "Job Summary"
+echo "Exit Code: $EXIT_CODE"
+echo "Duration: ${DURATION}s"
 
 if [ $EXIT_CODE -ne 0 ]; then
-  echo "Spark job FAILED" | tee -a "$LOG_FILE"
+  echo "Spark job FAILED"
   exit $EXIT_CODE
 else
-  echo "Spark job SUCCEEDED" | tee -a "$LOG_FILE"
+  echo "Spark job SUCCEEDED"
 fi
