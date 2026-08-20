@@ -173,7 +173,16 @@ services:
       - .env
     volumes:
       - kafka-data:/var/lib/kafka/data
-    
+
+  kafka-producer:
+    build: 
+      context: .
+      dockerfile: kafka-sse-producer/Dockerfile
+    depends_on:
+      - kafka
+    env_file:
+      - .env
+
 volumes: 
   postgres_data:
   app_db_data:
