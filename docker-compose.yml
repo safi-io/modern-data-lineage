@@ -5,9 +5,9 @@ x-logging: &default-logging
 
 services:
 
-  spark:
+  spark-master:
     image: apache/spark:4.0.2-scala2.13-java17-python3-r-ubuntu
-    container_name: spark
+    container_name: spark-master
     # logging: *default-logging
     user: root
     environment:
@@ -28,7 +28,7 @@ services:
     # logging: *default-logging
     user: root
     depends_on:
-      - spark
+      - spark-master
     environment:
       - SPARK_MODE=worker0
     command: >
@@ -40,14 +40,14 @@ services:
     env_file:
       - .env
 
-  dagster-db:
+  postgres:
     build:
       context: .
       dockerfile: docker/postgres/Dockerfile
-    container_name: dagster-db
+    container_name: postgres
     # logging: *default-logging
     volumes:
-      - dagster_db_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
       - ./docker/init-multiple-dbs.sql:/docker-entrypoint-initdb.d/init.sql
       - ./docker/postgres/custom-postgres.conf:/etc/postgresql/postgresql.conf
     ports:
@@ -61,7 +61,7 @@ services:
       - .env
     command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
 
-  webserver:
+  dagster-webserver:
     build:
       context: .
       dockerfile: dagster/Dockerfile
@@ -73,15 +73,15 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      dagster-db:
+      postgres:
         condition: service_healthy
-      daemon:
+      dagster-daemon:
         condition: service_started
     command: dagit -h 0.0.0.0 -p 3000 -w /opt/dagster/app/workspace.yaml
     env_file:
       - .env
 
-  daemon:
+  dagster-daemon:
     build:
       context: .
       dockerfile: dagster/Dockerfile
@@ -91,7 +91,7 @@ services:
       - ./dagster:/opt/dagster/app/
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
-      dagster-db:
+      postgres:
         condition: service_healthy
     command: dagster-daemon run
     env_file:
@@ -168,7 +168,7 @@ services:
       - clickhouse_log:/var/log/clickhouse-server  
 
 volumes: 
-  dagster_db_data:
+  postgres_data:
   app_db_data:
   superset_home:
   minio_data:
