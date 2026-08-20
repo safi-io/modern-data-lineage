@@ -32,7 +32,7 @@ services:
     environment:
       - SPARK_MODE=worker0
     command: >
-      /bin/bash -c "/opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark:7077"
+      /bin/bash -c "/opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077"
     ports:
       - "8082:8081"
     volumes:
@@ -158,15 +158,22 @@ services:
     ports:
       - "8123:8123"
       - "10000:9000"
-    environment:
-      CLICKHOUSE_DB: mel
-      CLICKHOUSE_USER: safi
-      CLICKHOUSE_PASSWORD: safi
-      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    env_file:
+      - .env
     volumes:
       - clickhouse_data:/var/lib/clickhouse
       - clickhouse_log:/var/log/clickhouse-server  
 
+  kafka:
+    image: apache/kafka:4.3.1
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    env_file:
+      - .env
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    
 volumes: 
   postgres_data:
   app_db_data:
@@ -175,3 +182,4 @@ volumes:
   nessie_data:
   clickhouse_data:
   clickhouse_log:
+  kafka-data:
