@@ -172,6 +172,12 @@ services:
       - "29092:29092"
     env_file:
       - .env
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 9092 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
     volumes:
       - kafka-data:/var/lib/kafka/data
 
@@ -180,7 +186,8 @@ services:
       context: .
       dockerfile: kafka-sse-producer/Dockerfile
     depends_on:
-      - kafka
+      kafka:
+        condition: service_healthy
     env_file:
       - .env
 
