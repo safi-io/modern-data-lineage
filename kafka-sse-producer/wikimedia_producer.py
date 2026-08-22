@@ -47,7 +47,10 @@ logger.info("Initializing Kafka producer")
 producer = KafkaProducer(
     bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
     key_serializer=lambda k: str(k).encode("utf-8"),
-    value_serializer=lambda v: json.dumps(v).encode("utf-8"),
+    value_serializer=lambda v: json.dumps(
+        v,
+        ensure_ascii=False
+    ).encode("utf-8")
 )
 
 logger.info("Kafka producer initialized successfully")
