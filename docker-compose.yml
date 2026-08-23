@@ -40,6 +40,15 @@ services:
     env_file:
       - .env
 
+  spark-notebook:
+    build:
+      context: ./notebook
+    container_name: spark-notebook
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./spark-apps:/opt/spark-apps
+
   postgres:
     build:
       context: .
@@ -188,6 +197,7 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+    restart: on-failure
     env_file:
       - .env
 
