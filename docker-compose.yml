@@ -3,15 +3,15 @@ x-logging: &default-logging
   options:
     fluentd-address: 127.0.0.1:24225
 
+# logging: *default-logging
+# need to add this in every service for fluetd logging
+
 services:
 
   spark-master:
     image: apache/spark:4.0.2-scala2.13-java17-python3-r-ubuntu
     container_name: spark-master
-    # logging: *default-logging
     user: root
-    environment:
-      - SPARK_MODE=master
     command: >
       /bin/bash -c "/opt/spark/bin/spark-class org.apache.spark.deploy.master.Master"
     ports:
@@ -24,17 +24,13 @@ services:
 
   spark-worker:
     image: apache/spark:4.0.2-scala2.13-java17-python3-r-ubuntu
-    container_name: spark-worker
-    # logging: *default-logging
     user: root
     depends_on:
       - spark-master
-    environment:
-      - SPARK_MODE=worker0
     command: >
-      /bin/bash -c "/opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077"
+      /bin/bash -c "/opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker --cores 4 spark://spark-master:7077"
     ports:
-      - "8082:8081"
+      - "8081"
     volumes:
       - ./spark-apps:/opt/spark-apps
     env_file:
@@ -54,7 +50,6 @@ services:
       context: .
       dockerfile: docker/postgres/Dockerfile
     container_name: postgres
-    # logging: *default-logging
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/init-multiple-dbs.sql:/docker-entrypoint-initdb.d/init.sql
@@ -75,7 +70,6 @@ services:
       context: .
       dockerfile: dagster/Dockerfile
     container_name: dagster-webserver
-    # logging: *default-logging
     volumes:
       - ./dagster:/opt/dagster/app/
       - /var/run/docker.sock:/var/run/docker.sock
@@ -95,7 +89,6 @@ services:
       context: .
       dockerfile: dagster/Dockerfile
     container_name: dagster-daemon
-    # logging: *default-logging
     volumes:
       - ./dagster:/opt/dagster/app/
       - /var/run/docker.sock:/var/run/docker.sock
@@ -109,7 +102,6 @@ services:
   minio:
     image: quay.io/minio/minio
     container_name: minio
-    # logging: *default-logging
     command: server /data --console-address ":9001"
     ports:
       - "8999:9000"
@@ -122,7 +114,6 @@ services:
   nessie:
     image: ghcr.io/projectnessie/nessie
     container_name: nessie
-    # logging: *default-logging
     ports:
       - "19120:19120"
     volumes:
@@ -133,7 +124,6 @@ services:
   trino:
     image: trinodb/trino
     container_name: trino
-    # logging: *default-logging
     # ports:
     #   - "8080:8080"
     volumes:
@@ -147,7 +137,6 @@ services:
   superset:
     image: apache/superset:3.1.1
     container_name: superset
-    # logging: *default-logging
     ports:
       - "8088:8088"
     volumes:
@@ -162,7 +151,6 @@ services:
   clickhouse:
     image: clickhouse:lts-jammy
     container_name: clickhouse
-    # logging: *default-logging
     restart: unless-stopped
     ports:
       - "8123:8123"
