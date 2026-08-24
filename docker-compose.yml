@@ -43,7 +43,7 @@ services:
     ports:
       - "8888:8888"
     volumes:
-      - ./spark-apps:/opt/spark-apps
+      - ./spark-apps:/opt/notebooks
 
   postgres:
     build:
