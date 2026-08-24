@@ -24,7 +24,7 @@ def run_spark(script_name: str, job_id: str | None):
         command.extend(["-e", f"{key}={value}"])
 
     command.extend(
-        ["spark", "bash", f"/opt/spark-apps/scripts/run_spark.sh", script_name]
+        ["spark-master", "bash", f"/opt/spark-apps/scripts/run_spark.sh", script_name]
     )
 
     if job_id:
