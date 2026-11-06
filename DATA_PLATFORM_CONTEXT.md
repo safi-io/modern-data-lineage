@@ -2,19 +2,22 @@
 
 ## 1. Platform overview
 
-This repository implements a local, Docker-based data platform centered on a batch ingestion and transformation workflow for LDAP-style log data. The platform stores raw log files in MinIO, loads them into a Spark/Iceberg/Nessie lakehouse, exposes the raw tables through Trino, and materializes cleaned models with dbt. Dagster orchestrates the ingestion and transformation steps and coordinates the Spark jobs and dbt builds.
+This repository implements a local, Docker-based data platform with a batch LDAP-log lakehouse workflow and a separate Wikimedia recent-changes streaming path. In the batch workflow, Dagster coordinates CSV ingestion from MinIO through Spark into a Nessie-cataloged Iceberg table, then runs dbt transformations exposed through Trino. The streaming components include a Wikimedia EventStreams SSE producer, a Kafka broker, and a Spark Structured Streaming consumer that writes to a separate Iceberg table in MinIO.
 
-The current processing model is batch-oriented and event-driven by file status rather than streaming messaging. Data is ingested from CSV files in MinIO into a raw Iceberg table; a dbt project reads that table and produces transformed tables in a cleaned schema. A separate Meltano-based PostgreSQL-to-ClickHouse job is configured and scheduled, but it is not part of the main CSV-to-lakehouse flow.
+The batch CSV-to-lakehouse path is orchestrated by Dagster. The Kafka producer is started by Docker Compose, while the Spark streaming consumer and its launcher are present in the repository but are not wired to a Compose service or Dagster job. A separate Meltano PostgreSQL-to-ClickHouse job is also configured and scheduled.
 
 Major technologies present in the repository include:
 
 - Python and Shell scripts
 - Docker Compose for local service deployment
 - Dagster for orchestration
-- Apache Spark 4.0.2 for batch processing
+- Apache Spark 4.0.2 for batch and Structured Streaming jobs
 - MinIO for S3-compatible object storage
 - Project Nessie as the Iceberg catalog
 - Apache Iceberg tables managed through Spark and Trino
+- Apache Kafka for the Wikimedia event stream
+- Wikimedia EventStreams SSE as a streaming source
+- Jupyter Notebook container for interactive Spark/Iceberg access
 - Trino as the query layer over the Iceberg catalog
 - PostgreSQL for Dagster metadata and file tracking
 - dbt with Trino adapter for transformation
@@ -23,19 +26,9 @@ Major technologies present in the repository include:
 
 High-level architecture:
 
-Data sources
-    ↓
-CSV files in MinIO / PostgreSQL source tables
-    ↓
-Dagster sensors and jobs
-    ↓
-Spark ingestion to Iceberg raw tables
-    ↓
-dbt transformation over Trino/Nessie Iceberg tables
-    ↓
-Superset and Trino query layer
-    ↓
-Optional ClickHouse sink for Meltano PostgreSQL replication
+Batch: MinIO CSV → Dagster → Spark → Nessie/Iceberg → dbt/Trino → Superset
+Streaming: Wikimedia SSE → Kafka → Spark Structured Streaming → Iceberg in MinIO
+Separate replication: PostgreSQL → Meltano tap-postgres → ClickHouse
 
 ---
 
@@ -44,23 +37,26 @@ Optional ClickHouse sink for Meltano PostgreSQL replication
 | Layer | Technology | How it is used |
 | --- | --- | --- |
 | Ingestion | CSV files in MinIO | Raw files are placed in the `soc` bucket under `data/` and are discovered by a Dagster sensor. |
-| Ingestion | PostgreSQL | `dagster-db` stores Dagster metadata and operational file tracking through `file_status`; Meltano tap-postgres is configured against PostgreSQL as a source. |
-| Processing | Apache Spark 4.0.2 | Runs batch jobs to read CSV from S3-compatible storage, validate schema, load Iceberg tables, and archive files. |
+| Ingestion | PostgreSQL | The `postgres` service stores Dagster metadata, file tracking through `file_status`, and Meltano state; Meltano tap-postgres is configured against PostgreSQL as a source. |
+| Ingestion | Meltano / Singer | Dagster schedules the `pg-ch` job, which uses `tap-postgres` with `LOG_BASED` replication and `target-clickhouse` to load ClickHouse. |
+| Ingestion | Wikimedia EventStreams SSE | The `kafka-producer` service reads Wikimedia recent-change events and publishes JSON messages to the configured Kafka topic. |
+| Processing | Apache Spark 4.0.2 | Runs the Dagster-launched batch CSV ingestion and includes a separately launched Structured Streaming Kafka consumer. |
 | Storage | MinIO | Acts as the object-store backend for the lakehouse warehouse and raw CSV landing zone. |
 | Table format | Apache Iceberg | Used for the raw `nessie.raw.stream_ldap` table and queried through Trino with the Nessie catalog. |
 | Orchestration | Dagster | Runs asset jobs, sensors, schedules, and resource definitions for Spark and dbt orchestration. |
 | Transformation | dbt | Reads the raw Iceberg table and creates transformed tables in the `cleaned` schema. |
 | Catalog / Metadata | Nessie | Serves as the Iceberg catalog backend and is integrated with Spark and Trino. |
 | Catalog / Metadata | PostgreSQL | Dagster storage database and file registry database; Meltano state database also exists. |
-| Streaming | Kafka | Not present in the repository. |
-| Streaming | CDC | Not implemented in the repository. |
+| Streaming | Apache Kafka 4.3.1 | A Docker Compose broker is configured with KRaft settings; the Wikimedia producer depends on its health check. |
+| Streaming | Spark Structured Streaming | A Kafka source and Iceberg append sink are implemented in a Spark application and launcher script; the consumer is not a Compose service or Dagster job. |
+| Interactive analysis | Jupyter Notebook | `spark-notebook` provides an interactive Spark environment with the `spark-apps/` directory mounted. |
 | Serving | Trino | Query engine for Iceberg tables in the Nessie catalog. |
 | Serving | Superset | Query UI configured to connect to Trino. |
 | Serving | ClickHouse | Target for the configured Meltano PostgreSQL replication pipeline. |
 | Observability | Dagster logs | Dagster asset logs and compute logs are recorded locally under `/opt/dagster/logs` and persisted in PostgreSQL. |
 | Observability | Spark logging | Spark job logs are emitted via a Python logger and included in Dagster run output. |
 | Observability | OpenTelemetry | Not present in the repository. |
-| Infrastructure | Docker Compose | Defines Spark, Spark worker, Dagster webserver, Dagster daemon, MinIO, Nessie, Trino, Superset, and ClickHouse services. |
+| Infrastructure | Docker Compose | Defines Spark master/worker/notebook, Dagster webserver/daemon, PostgreSQL, MinIO, Nessie, Trino, Superset, ClickHouse, Kafka, and the Wikimedia producer. |
 | Infrastructure | AWS | No AWS Terraform, IAM, or cloud deployment manifests are present in the repository. |
 | Infrastructure | Terraform | Not present in the repository. |
 | CI/CD | GitHub Actions / CI pipeline | Not present in the repository. |
@@ -69,7 +65,7 @@ Optional ClickHouse sink for Meltano PostgreSQL replication
 
 ## 3. Architecture
 
-The repository implements the following actual flow:
+The repository implements the following batch flow:
 
 Data Sources
     ↓
@@ -91,12 +87,13 @@ dbt model `cleaned.stream_ldap` and `cleaned.ldap_event_enriched`
     ↓
 Superset reads from the Trino/Iceberg layer
 
-The platform has two distinct operational paths:
+The repository contains three operational paths:
 
 1. The primary data platform path: CSV landing in MinIO → Spark ingestion into Iceberg raw table → dbt transformation in a cleaned schema → Trino/Superset consumption.
-2. A configured Meltano path: PostgreSQL source table `public-job_ticks` → Singer tap `tap-postgres` → target ClickHouse → ClickHouse database `mel`.
+2. A partially wired streaming path: Wikimedia EventStreams SSE → Kafka topic → Spark Structured Streaming consumer → Iceberg table in MinIO. The broker and producer are Compose services; the consumer is only provided as a Spark script and launcher.
+3. A configured Meltano path: PostgreSQL source table `public-job_ticks` → Singer tap `tap-postgres` → target ClickHouse → ClickHouse database `mel`.
 
-The first path is the repository’s main analytical workload. The second path is configured but separated from the raw CSV lakehouse flow.
+The batch path is Dagster-orchestrated. The streaming path is separate from the Nessie-backed batch catalog and does not feed the dbt models.
 
 ---
 
@@ -104,14 +101,15 @@ The first path is the repository’s main analytical workload. The second path i
 
 ```text
 modern-data-lineage/
-├── .env
 ├── .env.example
 ├── .dockerignore
 ├── README.md
 ├── docker-compose.yml
 ├── minio-file-dump.py
 ├── data/
-│   └── logs.csv
+│   ├── .gitkeep
+│   ├── uber_synthetic_data_script.py
+│   └── wikimedia.md
 ├── dagster/
 │   ├── Dockerfile
 │   ├── dagster.yaml
@@ -185,11 +183,20 @@ modern-data-lineage/
 │   │   ├── extractors/
 │   │   └── loaders/
 │   └── transform/
+├── kafka-sse-producer/
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   └── wikimedia_producer.py
+├── notebook/
+│   └── Dockerfile
 ├── spark-apps/
+│   ├── iceberg_read_from_spark.ipynb
 │   ├── logs_ingest_parquet_write.py
 │   ├── raw_schema_viewer.py
+│   ├── wikimedia_streaming.py
 │   ├── scripts/
-│   │   └── run_spark.sh
+│   │   ├── run_spark.sh
+│   │   └── run_wikimedia_streaming_job.sh
 │   └── utils/
 │       ├── columns_check.py
 │       └── logging_config_spark.py
@@ -203,11 +210,13 @@ Important directories:
 
 - `dagster/`: Dagster code, resources, jobs, schedules, sensors, and Docker runtime definitions.
 - `spark-apps/`: Spark jobs and shell launcher used by Dagster.
+- `kafka-sse-producer/`: Wikimedia SSE-to-Kafka producer service.
+- `notebook/`: Dockerfile for the interactive Spark/Jupyter container.
 - `dbt/modern_data_lineage/`: dbt project used to model the processed lakehouse data.
 - `meltano/`: Meltano project for PostgreSQL extraction to ClickHouse.
 - `docker/`: Postgres initialization and Superset service bootstrap.
 - `trino/`: Trino catalog configuration for the Iceberg/Nessie catalog.
-- `data/`: Local sample data directory; the repo contains `logs.csv`.
+- `data/`: Data-related scripts and Wikimedia stream reference; the CSV expected by `minio-file-dump.py` is not tracked.
 - `docker-compose.yml`: Local deployment definition for the platform services.
 
 ---
@@ -254,14 +263,24 @@ Important directories:
 - Source type: sample file
 - Source technology: local filesystem
 - Data format: CSV
-- Connection mechanism: `minio-file-dump.py` uploads `data/logs.csv` into MinIO bucket `soc`
-- Ingestion mechanism: manual loading to object storage before or during local demo runs
-- Destination: `soc/data/logs.csv` then Spark ingestion into raw Iceberg
+- Connection mechanism: `minio-file-dump.py` expects to upload `data/logs.csv` into MinIO bucket `soc`
+- Ingestion mechanism: manual loading to object storage before or during local demo runs; the expected CSV is not tracked in the repository
+- Destination: expected object `soc/data/logs.csv`, then Spark ingestion into raw Iceberg
 
-### 5. Kafka or CDC sources
+### 5. Wikimedia EventStreams source
 
-- Kafka: not present in this repository
-- CDC: not implemented in this repository
+- Source type: Wikimedia recent-change event stream over Server-Sent Events (SSE)
+- Connection setting: `KAFKA_PRODUCER_WIKIMEDIA_URL`
+- Ingestion component: `kafka-sse-producer/wikimedia_producer.py`
+- The producer parses message data as JSON, skips canary-domain and invalid-JSON events, and publishes accepted events keyed by Wikimedia event ID.
+- Kafka topic is configured through `KAFKA_PRODUCER_TOPIC`.
+- Destination: Kafka broker, then the separate Spark Structured Streaming application.
+
+### 6. Kafka and CDC status
+
+- Kafka is present as a Docker Compose service for the Wikimedia event flow.
+- The repository does not contain a Debezium connector or a PostgreSQL-to-Kafka CDC path.
+- Meltano's `tap-postgres` is separately configured with `default_replication_method: LOG_BASED`; this PostgreSQL-to-ClickHouse path is not the Wikimedia Kafka flow.
 
 ---
 
@@ -307,10 +326,20 @@ This is the repository’s main implemented ingestion flow.
 - Processing: Singer extraction to `target-clickhouse`
 - Schema handling: target loader is configured with `database`, `default_target_schema`, and `engine_type` set to `ReplacingMergeTree`
 - Destination: ClickHouse database `mel` and schema `mel`
-- File/table format: row-based replication into ClickHouse tables; no Kafka or CDC involved
+- File/table format: Singer extraction into ClickHouse tables; the tap is configured for `LOG_BASED` replication and is separate from Kafka and the lakehouse stream
 - Naming conventions: `tap-postgres` + `target-clickhouse` job called `pg-ch`
-- Metadata generated: Meltano state database at `dagster-db:5432/meltano` and ClickHouse table metadata; repository does not include generated migration files for target schema creation
+- Metadata generated: Meltano state database at `postgres:5432/meltano` and ClickHouse table metadata; repository does not include generated migration files for target schema creation
 - Orchestration relationship: triggered by Dagster `mel_pg_ch_job`, not by file sensors
+
+### Ingestion path 3: Wikimedia SSE through Kafka to Iceberg
+
+- Source: Wikimedia recent-change SSE endpoint provided through `KAFKA_PRODUCER_WIKIMEDIA_URL`
+- Producer: the Compose `kafka-producer` service parses event JSON and sends it to the topic named by `KAFKA_PRODUCER_TOPIC`, using the event ID as the Kafka message key
+- Broker: the Compose `kafka` service uses the Apache Kafka image and KRaft-related environment settings
+- Consumer: `spark-apps/wikimedia_streaming.py` reads topic `wikimedia-recent-changes` from `kafka:9092`, starting at `latest`
+- Output: the consumer appends Kafka message key, value, topic, partition, offset, and timestamp to Iceberg table `wikimedia.raw.recent_changes`
+- Storage and checkpoint: the streaming launcher configures a Hadoop Iceberg catalog with MinIO warehouse `s3a://soc/`; the query checkpoint path is `s3a://soc/checkpoints/wikimedia/`
+- Runtime status: the Spark consumer and `run_wikimedia_streaming_job.sh` launcher are present, but Docker Compose and Dagster do not start them. The producer's configured topic must correspond to the consumer's topic for the two components to connect.
 
 ### File registry and job state flow
 
@@ -338,7 +367,7 @@ The file tracking table is used in the CSV ingestion flow and is defined by runt
 
 - Path prefix: `data/`
 - File type: CSV
-- Example: `data/logs.csv`
+- The `minio-file-dump.py` uploader expects `data/logs.csv`, but that CSV is not present in the tracked repository.
 - Archive path: `data/archived/<timestamp>` as Parquet
 
 ### Iceberg lakehouse storage
@@ -350,6 +379,12 @@ The file tracking table is used in the CSV ingestion flow and is defined by runt
 - Namespace used by Spark: `nessie.raw`
 - Table used by main ingestion flow: `nessie.raw.stream_ldap`
 - Trino catalog config file: `trino/catalog/nessie.properties`
+
+### Wikimedia streaming table storage
+
+- The Spark streaming launcher configures a separate Hadoop Iceberg catalog named `wikimedia`, with warehouse `s3a://soc/`.
+- The stream application writes `wikimedia.raw.recent_changes` and checkpoints under `s3a://soc/checkpoints/wikimedia/`.
+- This application does not configure the Nessie catalog and its table is not declared as a dbt source in the repository.
 
 ### Filesystem-level S3 configuration
 
@@ -366,15 +401,16 @@ Configured in Spark and Trino as S3A / S3-compatible access:
 
 ### Table format and catalog behavior
 
-- The Spark job uses `spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions`
-- The catalog is configured as `spark.sql.catalog.nessie=org.apache.iceberg.spark.SparkCatalog`
-- Catalog implementation is `org.apache.iceberg.nessie.NessieCatalog`
-- The data catalog is not configured as Hive metastore and is not configured for a separate AWS Glue catalog in this repo
+- The batch Spark job uses `spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions`
+- The batch catalog is configured as `spark.sql.catalog.nessie=org.apache.iceberg.spark.SparkCatalog`, with catalog implementation `org.apache.iceberg.nessie.NessieCatalog`
+- The streaming Spark launcher configures a separate `wikimedia` Hadoop catalog with a MinIO warehouse
+- Neither catalog is configured as a Hive metastore or a separate AWS Glue catalog in this repo
 
 ### Metadata and snapshot/versioning
 
 - Iceberg metadata is managed by Nessie catalog state and the Iceberg table metadata files written in the warehouse.
 - Spark writes Iceberg tables into the configured warehouse path and uses `MERGE INTO` for incremental upsert behavior.
+- The Wikimedia streaming table is written through the separate Hadoop catalog, not the Nessie catalog.
 - Repository does not contain explicit snapshot retention or branching policy configuration beyond the `main` branch in Nessie.
 - No Iceberg table compaction or rewrite configuration is present in the repo.
 
@@ -384,14 +420,14 @@ Configured in Spark and Trino as S3A / S3-compatible access:
 
 ### Raw layer
 
-- Raw layer name used in the code: `raw`
-- Table: `nessie.raw.stream_ldap`
+- Batch raw table: `nessie.raw.stream_ldap`, in the Nessie catalog
 - Contents:
   - `_serial`: integer sequence identifier
   - `_raw`: JSON payload string from the CSV
 - Produced by: `spark-apps/logs_ingest_parquet_write.py`
 - Storage format: Iceberg table in MinIO-backed warehouse
 - Access pattern: direct Spark catalog write and Trino reads via the Nessie catalog
+- Separate streaming raw table: `wikimedia.raw.recent_changes`, written by the Structured Streaming app through its Hadoop catalog to MinIO; it contains the Kafka key, JSON value, topic, partition, offset, and timestamp fields.
 
 ### Cleaned layer
 
@@ -425,7 +461,7 @@ Configured in Spark and Trino as S3A / S3-compatible access:
 
 - Docker image: `apache/spark:4.0.2-scala2.13-java17-python3-r-ubuntu`
 - Deployment model: local multi-container Docker Compose deployment with one Spark master and one Spark worker
-- Master URL: `spark://spark:7077`
+- Master URL: `spark://spark-master:7077`
 - Job launcher: `spark-apps/scripts/run_spark.sh`
 
 ### Spark applications and jobs
@@ -453,6 +489,26 @@ Configured in Spark and Trino as S3A / S3-compatible access:
 - Purpose: prints the schema of `nessie.raw.stream_ldap`
 - Input source: Iceberg table in Nessie catalog
 - Output: Spark schema printout to logs
+
+#### `spark-apps/wikimedia_streaming.py`
+
+- Purpose: consume the Wikimedia Kafka topic with Spark Structured Streaming and append records to an Iceberg table.
+- Kafka source: broker `kafka:9092`, topic `wikimedia-recent-changes`, starting offsets `latest`.
+- Selected data: message key and value plus Kafka topic, partition, offset, and timestamp.
+- Sink: Iceberg table `wikimedia.raw.recent_changes`.
+- Checkpoint: `s3a://soc/checkpoints/wikimedia/`.
+- The launcher is `spark-apps/scripts/run_wikimedia_streaming_job.sh`; neither it nor the application is invoked by a Compose service or Dagster definition.
+
+#### `spark-apps/iceberg_read_from_spark.ipynb`
+
+- Interactive notebook mounted into the `spark-notebook` Jupyter service.
+- Creates a Spark session configured with Iceberg runtime packages and MinIO S3A access, then reads `s3a://soc/raw/recent_changes` and displays its schema and row count.
+- It is an interactive exploration artifact, not an orchestrated production job.
+
+### Spark notebook service
+
+- `spark-notebook` is built from `notebook/Dockerfile`, exposes Jupyter on port `8888`, and mounts `spark-apps/` at `/opt/notebooks`.
+- The notebook image is based on the Spark 4.0.2 image and installs Jupyter and PySpark.
 
 ### Spark configuration and Iceberg integration
 
@@ -484,7 +540,7 @@ The repo uses Dagster as the central orchestrator for file processing and dbt ex
 - Storage backend: PostgreSQL using `dagster/dagster.yaml`
 - Webserver: `dagit -h 0.0.0.0 -p 3000 -w /opt/dagster/app/workspace.yaml`
 - Daemon: `dagster-daemon run`
-- Metadata database: `dagster-db` PostgreSQL container
+- Metadata database: `postgres` PostgreSQL container
 - Runtime storage DB: configured with `DAGSTER_INTERNAL_PG_DB=dagster`
 - Custom DB used by app logic: `DAGSTER_CUSTOM_PG_DB=custom`
 
@@ -570,7 +626,7 @@ The repo uses Dagster as the central orchestrator for file processing and dbt ex
 
 ### Relationship with Spark
 
-Spark jobs are launched by Dagster using a container-exec command from the Dagster container to the `spark` service. The helper `dagster/assets/utils/run_spark_script.py` passes the environment variables to `docker exec -e ... spark bash /opt/spark-apps/scripts/run_spark.sh <script> [job_id]`.
+Spark batch jobs are launched by Dagster using a container-exec command from the Dagster container to `spark-master`. The helper `dagster/assets/utils/run_spark_script.py` passes environment variables to `docker exec -e ... spark-master bash /opt/spark-apps/scripts/run_spark.sh <script> [job_id]`.
 
 ### Relationship with ingestion
 
@@ -679,35 +735,26 @@ Dagster executes the dbt build using the `cleaned` tag and the `DbtCliResource` 
 
 ## 12. Kafka / Streaming
 
-### Current status
+### Current implementation
 
-Kafka is not implemented in this repository.
+- Docker Compose defines an Apache Kafka 4.3.1 service and a `kafka-producer` service that waits for the broker health check.
+- `kafka-sse-producer/wikimedia_producer.py` reads Wikimedia SSE messages, decodes JSON, skips canary-domain events, and publishes messages keyed by event ID. The producer uses `KAFKA_PRODUCER_TOPIC` and `KAFKA_PRODUCER_BOOTSTRAP_SERVERS`.
+- The broker's KRaft configuration is supplied through environment variables in `.env.example`.
+- The streaming Spark application consumes from `kafka:9092` and is configured for topic `wikimedia-recent-changes`, starting at latest offsets.
+- Spark writes append-mode output to `wikimedia.raw.recent_changes` and checkpoints to MinIO.
 
-### Evidence
+### Deployment boundary
 
-- No Kafka service is defined in the Docker Compose file.
-- No Kafka producer or consumer code is present in the Python code.
-- No topic configuration, partitions, or consumer group definitions are present.
-- No `kafka-python`, `confluent-kafka`, or similar dependency is present in the repository.
-
-### Configured but unused / mentioned but not implemented
-
-- Not present.
-- `UNKNOWN — cannot be determined from repository` for any undocumented Kafka integration.
-
-### CDC state
-
-CDC is not implemented in this repository.
+- Kafka and the SSE producer are Compose services.
+- `spark-apps/wikimedia_streaming.py` and `spark-apps/scripts/run_wikimedia_streaming_job.sh` implement a consumer and its launcher, but Compose defines no Spark streaming service and Dagster defines no streaming job or schedule. Running the producer alone does not write the Iceberg table.
+- The producer's topic is environment-configured, while the Spark consumer currently subscribes to the literal topic `wikimedia-recent-changes`.
+- No Kafka UI, Kafka metrics exporter, or monitoring service is defined.
 
 ---
 
 ## 13. CDC
 
-CDC is not currently implemented.
-
-There is no Debezium connector, no change-data-capture pipeline, no Kafka pipeline for database changes, and no event ingestion pattern from a database transaction log into the lakehouse.
-
-The repo demonstrates a CSV-to-Iceberg batch flow and a separate Meltano PostgreSQL-to-ClickHouse replication job, but not a database log-based CDC pattern.
+There is no Debezium connector or PostgreSQL-to-Kafka CDC flow. The separate Meltano `tap-postgres` plugin is explicitly configured with `default_replication_method: LOG_BASED` and a replication key for its PostgreSQL-to-ClickHouse job. This is separate from the Wikimedia Kafka stream and does not feed the Iceberg lakehouse.
 
 ---
 
@@ -854,6 +901,8 @@ Implemented logging exists in the following places:
 - Dagster asset logs via `context.log.info(...)` and `context.log.error(...)`
 - Spark job logs emitted by `get_spark_logger(job_id)` from `spark-apps/utils/logging_config_spark.py`
 - Shell launcher prints environment validation and job summary in `spark-apps/scripts/run_spark.sh`
+- The Wikimedia producer uses Python's standard logging module.
+- Spark Structured Streaming emits Spark application logs when its launcher is run.
 
 ### Metrics
 
@@ -868,8 +917,9 @@ Implemented logging exists in the following places:
 ### Observability services
 
 - Dagster UI and compute logs are part of the local stack.
-- Spark UI is exposed through the master container on port `8080` and the worker on `8081`.
+- Spark master UI is published on host port `8081`; the worker publishes its UI port without a fixed host-port mapping.
 - Kafka monitoring is not present.
+- Jupyter is exposed by `spark-notebook` on port `8888`.
 - ClickHouse logging is present as a container runtime log volume, but no application-level metrics stack is configured.
 
 ---
@@ -882,26 +932,31 @@ The platform is deployed locally via Docker Compose.
 
 ### Services defined in `docker-compose.yml`
 
-- `spark`: Spark master
+- `spark-master`: Spark master
 - `spark-worker`: Spark worker
-- `dagster-db`: PostgreSQL instance for Dagster metadata and file-tracking database
-- `webserver`: Dagster webserver
-- `daemon`: Dagster daemon
+- `spark-notebook`: Jupyter notebook container based on the Spark image
+- `postgres`: PostgreSQL instance used for Dagster metadata, file tracking, and Meltano state
+- `dagster-webserver`: Dagster webserver
+- `dagster-daemon`: Dagster daemon
 - `minio`: MinIO object storage
 - `nessie`: Nessie catalog service
 - `trino`: Trino query service against the Iceberg catalog
 - `superset`: Superset dashboard app
 - `clickhouse`: ClickHouse database
+- `kafka`: Apache Kafka broker
+- `kafka-producer`: Wikimedia EventStreams SSE producer
 
 ### Network and storage
 
 - Docker volumes are defined for:
-  - `dagster_db_data`
+  - `postgres_data`
+  - `app_db_data` (declared volume; no service mount is present)
   - `superset_home`
   - `minio_data`
   - `nessie_data`
   - `clickhouse_data`
   - `clickhouse_log`
+  - `kafka-data`
 - The system is local-only and not configured for a cloud provider deployment.
 
 ### AWS / cloud configuration
@@ -926,23 +981,27 @@ The project runs through Docker Compose using `docker-compose.yml`.
 
 ### Required services
 
-The stack includes the following runtime dependencies:
+The Compose file defines the following runtime services:
 
-- `spark`
+- `spark-master`
 - `spark-worker`
-- `dagster-db`
-- `webserver`
-- `daemon`
+- `spark-notebook`
+- `postgres`
+- `dagster-webserver`
+- `dagster-daemon`
 - `minio`
 - `nessie`
 - `trino`
 - `superset`
 - `clickhouse`
+- `kafka`
+- `kafka-producer`
 
 ### Ports exposed
 
-- Spark master: `7077` and `8081`
-- Spark worker: `8082`
+- Spark master: `7077` and `8081` (master UI)
+- Spark worker UI: container port `8081`, published without a fixed host port
+- Jupyter: `8888`
 - Dagster webserver: `3000`
 - MinIO API: `8999`
 - MinIO console: `9001`
@@ -950,16 +1009,17 @@ The stack includes the following runtime dependencies:
 - Superset: `8088`
 - ClickHouse: `8123`, `10000`
 - PostgreSQL: `5432`
+- Kafka: `29092` (published host port; Spark consumer uses `kafka:9092` on the Compose network)
 
 ### Environment configuration
 
-- `.env` contains the runtime secrets names and service configuration values used by the stack.
-- `.env.example` shows the expected variable names without actual values.
+- Compose reads runtime values from a local `.env` file, which is not tracked; `.env.example` lists expected variable names without values.
 - Secret names include `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `DAGSTER_PG_PASSWORD`, `SUPERSET_ADMIN_PASSWORD`, `TARGET_CLICKHOUSE_PASSWORD`, and others.
+- Kafka uses `KAFKA_NODE_ID`, `KAFKA_PROCESS_ROLES`, `KAFKA_LISTENERS`, `KAFKA_ADVERTISED_LISTENERS`, and other KRaft/broker settings. The producer uses `KAFKA_PRODUCER_WIKIMEDIA_URL`, `KAFKA_PRODUCER_BOOTSTRAP_SERVERS`, `KAFKA_PRODUCER_TOPIC`, and `KAFKA_PRODUCER_USER_AGENT_HEADERS`.
 
 ### Local data initialization
 
-- `minio-file-dump.py` creates the `soc` bucket and uploads `data/logs.csv` to MinIO.
+- `minio-file-dump.py` creates the `soc` bucket and attempts to upload `data/logs.csv` to MinIO; that input is not tracked in the repository.
 - `docker/init-multiple-dbs.sql` creates the `meltano` database during Postgres initialization.
 
 ### Development tools
@@ -987,6 +1047,14 @@ The stack includes the following runtime dependencies:
 | `TAP_POSTGRES_*` | PostgreSQL source configuration for Meltano tap-postgres. |
 | `TARGET_CLICKHOUSE_*` | ClickHouse target configuration for Meltano target-clickhouse. |
 | `CLICKHOUSE_DB` / `CLICKHOUSE_USER` / `CLICKHOUSE_PASSWORD` | ClickHouse service runtime configuration. |
+| `KAFKA_NODE_ID` / `KAFKA_PROCESS_ROLES` / `KAFKA_LISTENERS` / `KAFKA_ADVERTISED_LISTENERS` / other `KAFKA_*` broker variables | Single Kafka broker and KRaft configuration. |
+| `KAFKA_PRODUCER_WIKIMEDIA_URL` | Wikimedia SSE endpoint consumed by the producer. |
+| `KAFKA_PRODUCER_BOOTSTRAP_SERVERS` | Kafka bootstrap address used by the producer. |
+| `KAFKA_PRODUCER_TOPIC` | Kafka topic to which the producer publishes. |
+| `KAFKA_PRODUCER_USER_AGENT_HEADERS` | User-Agent header value sent to the Wikimedia SSE endpoint. |
+| `spark-apps/scripts/run_wikimedia_streaming_job.sh` settings | Spark master, Kafka package, Hadoop Iceberg catalog, MinIO warehouse and S3A connection for the streaming application. |
+| `wikimedia_streaming.py` options | Kafka source topic, starting offsets, output table and checkpoint location. |
+| `notebook/Dockerfile` | Jupyter/PySpark interactive container definition. |
 | `dbt_project.yml` / `profiles.yml` | dbt project metadata and Trino connection settings. |
 | `nessie.properties` | Trino access configuration to the Nessie/Iceberg warehouse. |
 
@@ -1028,6 +1096,15 @@ No passwords, tokens, or secrets are included in this file as literal values. Co
 3. `target-clickhouse` writes the extracted rows to ClickHouse.
 4. Dagster schedules this job daily through `mel_pg_ch_schedule.py`.
 
+### Flow 5 — Wikimedia EventStreams to MinIO Iceberg
+
+1. The Compose `kafka-producer` service connects to the configured Wikimedia SSE URL.
+2. It parses message JSON, skips canary events, and publishes event data to `KAFKA_PRODUCER_TOPIC`, using the event ID as the message key.
+3. The Compose Kafka broker receives the messages.
+4. When launched separately, `wikimedia_streaming.py` reads the hard-coded topic `wikimedia-recent-changes` from `kafka:9092`, beginning at the latest offsets.
+5. Spark appends Kafka key/value and record metadata to `wikimedia.raw.recent_changes` using the Hadoop Iceberg catalog and checkpoints to `s3a://soc/checkpoints/wikimedia/`.
+6. The streaming launcher is not called by Docker Compose or Dagster; the stream table is therefore not produced by the configured Compose services alone.
+
 ---
 
 ## 22. Architecture diagram
@@ -1037,6 +1114,7 @@ flowchart LR
     subgraph Sources
         CSV[CSV files in MinIO]
         PG[PostgreSQL source table public-job_ticks]
+        SSE[Wikimedia EventStreams SSE]
     end
 
     subgraph Orchestration
@@ -1048,12 +1126,16 @@ flowchart LR
     subgraph Processing
         Spark[Spark 4.0.2]
         DBT[dbt + Trino]
+        Kafka[Kafka broker]
+        Producer[Wikimedia SSE producer]
+        StreamSpark[Spark Structured Streaming<br/>separate launcher]
     end
 
     subgraph Storage
         MinIO[MinIO bucket soc]
         Nessie[Nessie catalog]
         Iceberg[Iceberg tables]
+        StreamTable[wikimedia.raw.recent_changes]
     end
 
     subgraph Serving
@@ -1076,6 +1158,11 @@ flowchart LR
 
     PG --> Dagster
     Dagster --> ClickHouse
+    SSE --> Producer
+    Producer --> Kafka
+    Kafka --> StreamSpark
+    StreamSpark --> StreamTable
+    StreamTable --> MinIO
 ```
 
 ---
@@ -1095,8 +1182,10 @@ flowchart LR
 | Superset | Implemented | Service deployment and bootstrap script are present. |
 | ClickHouse | Implemented | Container and target-clickhouse config are present. |
 | Meltano | Implemented | `meltano.yml` and plugin definitions are present. |
-| Kafka | Not implemented | No Kafka service or code references exist. |
-| CDC | Not implemented | No Debezium or log-based change capture flow exists. |
+| Kafka | Implemented for the Wikimedia path | Compose broker and SSE producer services are defined; producer topic is environment-configured. |
+| Wikimedia Spark streaming sink | Partially implemented | Spark consumer, launcher, Iceberg sink, and checkpoint are defined, but no Compose service or Dagster job starts the consumer. |
+| CDC | Configured in Meltano only | `tap-postgres` is configured with `LOG_BASED` replication for the separate ClickHouse job; no Debezium or PostgreSQL-to-Kafka path is present. |
+| Jupyter Spark notebook | Implemented | Compose service, notebook image, mounted Spark applications, and Iceberg exploration notebook are present. |
 | Terraform | Not implemented | No infrastructure-as-code files are present. |
 | AWS deployment | Not implemented | No cloud deployment manifests are present. |
 | OpenTelemetry | Not implemented | No telemetry package or config is present. |
@@ -1111,7 +1200,8 @@ flowchart LR
 - The raw lakehouse table is `nessie.raw.stream_ldap` and is stored in MinIO through the Nessie catalog and Iceberg format.
 - Dagster is the operational orchestrator for file discovery, file registration, Spark job execution, and dbt builds.
 - The platform makes use of a local dev container architecture rather than a cloud-deployed environment.
-- There is no Kafka, no CDC flow, and no event bus in the implemented architecture.
+- Kafka carries Wikimedia SSE events; the Spark consumer is not automatically launched by the current Compose or Dagster configuration.
+- Meltano's PostgreSQL tap is configured for `LOG_BASED` replication, separately from the Kafka and Iceberg flows.
 - The repository includes a separate Meltano PostgreSQL-to-ClickHouse pipeline configured as a daily scheduled job.
 - The raw data is not stored in a relational database in the main path; it is stored as Iceberg tables in the MinIO/Nessie lakehouse.
 - The actual transformed naming convention in the repo is `raw` and `cleaned`, not a formal `bronze/silver/gold` nomenclature. The `structured` directory exists but is not implemented.
@@ -1121,7 +1211,7 @@ flowchart LR
 # LLM QUICK CONTEXT
 
 ## Platform
-This repo is a local Docker-based data platform for batch ingestion and transformation of LDAP-style log data. The main flow loads CSV files from MinIO into a Spark/Iceberg lakehouse, then transforms them with dbt and queries them through Trino and Superset. Dagster orchestrates the ingestion and dbt steps; a secondary Meltano job moves PostgreSQL rows into ClickHouse.
+This repo is a local Docker-based data platform with a Dagster-orchestrated batch CSV-to-Iceberg/dbt flow and a separate Wikimedia SSE-to-Kafka streaming path. The Kafka broker and SSE producer are Compose services; a Spark Structured Streaming consumer and launcher are present but are not started by Compose or Dagster. A separate Meltano PostgreSQL-to-ClickHouse job is configured and scheduled.
 
 ## Architecture
 ```mermaid
@@ -1136,34 +1226,38 @@ flowchart LR
     DBT --> Superset[Superset]
     PG[PostgreSQL source table] --> Meltano[Meltano tap-postgres]
     Meltano --> CH[ClickHouse]
+    SSE[Wikimedia EventStreams SSE] --> Producer[Wikimedia producer]
+    Producer --> Kafka[Kafka topic]
+    Kafka --> StreamSpark[Spark Structured Streaming<br/>separate launcher]
+    StreamSpark --> StreamIceberg[Iceberg wikimedia.raw.recent_changes<br/>MinIO]
 ```
 
 ## Stack
-Python, Dagster, Apache Spark 4.0.2, MinIO, Nessie, Apache Iceberg, Trino, PostgreSQL, dbt, ClickHouse, Superset, Docker Compose.
+Python, Dagster, Apache Spark 4.0.2, Apache Kafka 4.3.1, Wikimedia EventStreams SSE, MinIO, Nessie, Apache Iceberg, Trino, PostgreSQL, dbt, ClickHouse, Superset, Jupyter, Docker Compose.
 
 ## Data Flow
-CSV files are landed in MinIO, discovered by Dagster sensors, tracked in PostgreSQL, processed by Spark into an Iceberg raw table, transformed by dbt, and exposed via Trino. A separate Meltano pipeline extracts PostgreSQL data into ClickHouse.
+Batch: CSV files in MinIO → Dagster sensors and PostgreSQL file registry → Spark → `nessie.raw.stream_ldap` → dbt cleaned tables → Trino/Superset. Streaming: Wikimedia SSE → producer → Kafka → separately launched Spark consumer → `wikimedia.raw.recent_changes` in MinIO. Meltano separately extracts PostgreSQL data to ClickHouse.
 
 ## Storage
-Raw CSVs live in MinIO `soc/data/`; the main lakehouse table is `nessie.raw.stream_ldap` in the Nessie-backed Iceberg catalog; the warehouse is in MinIO via S3-compatible settings.
+CSV landing and archive paths use the MinIO `soc` bucket. The batch table `nessie.raw.stream_ldap` uses the Nessie-backed Iceberg catalog. The streaming app uses a separate Hadoop Iceberg catalog over MinIO for `wikimedia.raw.recent_changes` and stores checkpoints under `s3a://soc/checkpoints/wikimedia/`.
 
 ## Processing
-Spark runs the ingest job, validates schema, merges by `_serial`, and archives files to `data/archived/` as Parquet. dbt parses JSON payloads in `_raw` and builds cleaned tables.
+Spark batch ingestion validates CSV schema, merges by `_serial`, and archives files as Parquet under `s3a://soc/data/archived/`. The Structured Streaming app reads Kafka from latest offsets and appends messages and Kafka metadata to Iceberg. dbt parses batch `_raw` JSON payloads into cleaned models.
 
 ## Orchestration
-Dagster schedules and triggers file detection, file registration, Spark ingestion, and dbt builds. The `pg-ch` Meltano job is also scheduled daily.
+Dagster sensors and jobs handle batch file detection, registration, Spark ingestion, and dbt builds. The `pg-ch` Meltano job is scheduled daily. Kafka and its producer run through Compose; Spark streaming has a launcher but no Compose/Dagster orchestration.
 
 ## Transformation
 The transformation layer is implemented in dbt; `cleaned.stream_ldap` parses raw JSON and `cleaned.ldap_event_enriched` adds classification fields such as protocol, authentication indicator, and severity.
 
 ## Streaming
-No Kafka or CDC flow is implemented in this repo.
+The Wikimedia producer and Kafka broker are configured Compose services. Spark Structured Streaming code writes to Iceberg when launched separately; the consumer is not started automatically. Meltano's PostgreSQL tap separately specifies `LOG_BASED` replication; there is no Debezium or PostgreSQL-to-Kafka CDC path.
 
 ## Data Model
-The main modeled record is an LDAP event; raw data is stored as `_serial` and `_raw`, then structured into event fields like `src_ip`, `dest_ip`, `event_type`, and derived flags in the cleaned layer.
+The batch model is an LDAP event: raw data is stored as `_serial` and `_raw`, then structured into event fields like `src_ip`, `dest_ip`, and `event_type`, with derived flags in the cleaned layer. The separate Wikimedia stream table preserves Kafka key/value and topic, partition, offset, and timestamp metadata.
 
 ## Infrastructure
-Local Docker Compose deployment with Spark, Dagster, MinIO, Nessie, Trino, Superset, and ClickHouse services. No Terraform or cloud deployment manifests are present.
+Local Docker Compose deployment with Spark master/worker/notebook, Dagster webserver/daemon, PostgreSQL, MinIO, Nessie, Trino, Superset, ClickHouse, Kafka, and the Wikimedia producer. No Terraform or cloud deployment manifests are present.
 
 ## Current State
-Implemented: Spark, Dagster, dbt, MinIO, Nessie, Iceberg, Trino, PostgreSQL, Superset, ClickHouse, Meltano. Not implemented: Kafka, CDC, Terraform, AWS deployment, OpenTelemetry, formal CI/CD pipeline.
+Implemented: batch Spark, Dagster, dbt, MinIO, Nessie, Iceberg, Trino, PostgreSQL, Superset, ClickHouse, Meltano, Kafka broker/Wikimedia producer, and Jupyter notebook service. Partially implemented: Spark Structured Streaming consumer (script and launcher exist but are not started by Compose or Dagster); Meltano PostgreSQL tap is configured for `LOG_BASED` replication. Not implemented: Debezium/PostgreSQL-to-Kafka CDC, Terraform, AWS deployment, OpenTelemetry, formal CI/CD pipeline.
